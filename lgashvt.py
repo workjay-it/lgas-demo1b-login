@@ -202,6 +202,9 @@ elif choice == "Truck Intake":
                 "driver_name": driver,
                 "arrival_time": str(datetime.now())
             }).execute()
+
+            st.cache_data.clear() # Clears the cache so the dashboard updates
+            
             st.success(f"Truck registered! Batch {new_batch} is now linked to {selected_company}.")
             
 # --- PAGE: SEARCH ---
@@ -210,6 +213,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
