@@ -133,7 +133,7 @@ elif choice == "Truck Intake (New Batch)":
                 st.success(f"Truckload {b_id} registered. You can now link cylinders to this ID.")
             else: st.error("Batch ID is required.")
 
-# --- PAGE: BULK PROCESSING ---
+# --- PAGE: BULK PROCESSING (Live Checklist Mode) ---
 elif choice == "Bulk Processing":
     st.header("Production Line Triage")
     batches_df = load_batches()
@@ -141,21 +141,62 @@ elif choice == "Bulk Processing":
     if batches_df.empty:
         st.warning("No active batches found. Please register a Truck Intake first.")
     else:
-        with st.form("triage_form"):
-            selected_b = st.selectbox("Select Batch to Process", batches_df["batch_id"].tolist())
-            scanned_ids = st.text_area("Scan IDs (Hardware scanner dump)")
-            new_status = st.selectbox("Assign Result", ["Full", "Damaged", "Under Maintenance"])
-            
-            if st.form_submit_button("Update Production Status"):
-                id_list = [i.strip().upper() for i in scanned_ids.replace(",", "\n").split("\n") if i.strip()]
-                if id_list:
-                    supabase.table("cylinders").update({
-                        "Status": new_status,
-                        "Batch_ID": selected_b,
-                        "Last_Test_Date": str(datetime.now().date())
-                    }).in_("Cylinder_ID", id_list).execute()
-                    st.success(f"Batch {selected_b} updated with {len(id_list)} units.")
+        # 1. Select the Batch to work on
+        selected_b = st.selectbox("Select Batch to Process", batches_df["batch_id"].tolist())
+        
+        # 2. Fetch cylinders specifically for this batch
+        all_cyls = load_cylinders()
+        batch_cyls = all_cyls[all_cyls["Batch_ID"] == selected_b].copy()
+        
+        if batch_cyls.empty:
+            st.info(f"No cylinders are currently linked to {selected_b}. You can use the 'Scan to Link' tool below.")
+        else:
+            st.subheader(f"Unit Checklist for {selected_b}")
+            st.write("Update the 'Status' or 'Condition_Notes' directly in the table below:")
 
+            # 3. Use st.data_editor to allow inline editing
+            edited_df = st.data_editor(
+                batch_cyls[["Cylinder_ID", "Status", "Condition_Notes", "Last_Test_Date"]],
+                column_config={
+                    "Status": st.column_config.SelectboxColumn(
+                        "Test Result",
+                        options=["Full", "Empty", "Damaged", "Under Maintenance"],
+                        required=True,
+                    ),
+                    "Cylinder_ID": st.column_config.TextColumn("Cylinder ID", disabled=True),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="batch_editor"
+            )
+
+            # 4. Save Changes Button
+            if st.button("Save All Changes to Database"):
+                # We identify what changed and update Supabase
+                for index, row in edited_df.iterrows():
+                    supabase.table("cylinders").update({
+                        "Status": row["Status"],
+                        "Condition_Notes": row["Condition_Notes"],
+                        "Last_Test_Date": str(datetime.now().date())
+                    }).eq("Cylinder_ID", row["Cylinder_ID"]).execute()
+                
+                st.success(f"Successfully updated batch {selected_b}!")
+                st.cache_data.clear()
+
+        st.markdown("---")
+        
+        # 5. Tool to add NEW cylinders to this batch (via Scanner)
+        st.subheader("Add/Link New Cylinders to this Batch")
+        with st.expander("Scan cylinders to add them to this batch"):
+            new_scans = st.text_area("Scan IDs here (One per line)")
+            if st.button("Link Scanned Units"):
+                id_list = [i.strip().upper() for i in new_scans.replace(",", "\n").split("\n") if i.strip()]
+                if id_list:
+                    supabase.table("cylinders").update({"Batch_ID": selected_b}).in_("Cylinder_ID", id_list).execute()
+                    st.success(f"Linked {len(id_list)} units to {selected_b}")
+                    st.cache_data.clear()
+                    st.rerun()
+                    
 # --- PAGE: SEARCH ---
 elif choice == "Inventory Search":
     st.header("Unit Traceability")
@@ -174,6 +215,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
