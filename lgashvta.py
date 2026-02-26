@@ -16,6 +16,32 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- 1.5 LOGIN & ACCESS CONTROL ---
+# This block must come BEFORE any database or data loading logic
+if 'role' not in st.session_state:
+    st.session_state.role = None
+
+def login():
+    with st.container():
+        st.subheader("🔑 KWS Logistics Portal Login")
+        user = st.text_input("Username")
+        pwd = st.text_input("Password", type="password")
+        if st.button("Login"):
+            # Credentials for different roles
+            if user == "admin" and pwd == "admin123":
+                st.session_state.role = "Admin"
+            elif user == "gas_co" and pwd == "gas2024":
+                st.session_state.role = "Gas_Company"
+            elif user == "test_center" and pwd == "test99":
+                st.session_state.role = "Testing_Center"
+            else:
+                st.error("Invalid credentials")
+            st.rerun()
+
+if st.session_state.role is None:
+    login()
+    st.stop() # Prevents the rest of the script from running until login is successful
+
 # --- 2. DATABASE CONNECTION & GLOBAL DATA ---
 @st.cache_resource
 def init_connection():
@@ -23,11 +49,9 @@ def init_connection():
 
 supabase = init_connection()
 
-# MASTER DATA FUNCTION: Shared by Dashboard and Search pages
 @st.cache_data(ttl=300)
 def get_unified_data():
     try:
-        # Fetch data from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
         b_df = pd.DataFrame(b_res.data)
@@ -35,28 +59,43 @@ def get_unified_data():
         
         if b_df.empty: return pd.DataFrame()
 
-        # Standardize column naming for the merge
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
         
-        # Clean IDs and standardize to uppercase
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
             
-        # Left join to keep all batches even if they have no cylinders scanned yet
         return pd.merge(b_df, c_df, on="batch_id", how="left")
     except Exception as e:
         st.error(f"Database sync error: {e}")
         return pd.DataFrame()
 
-# Load the master data once here so it is available globally
 full_df = get_unified_data()
 
-# --- 3. NAVIGATION ---
-st.sidebar.title("KWS Logistics Hub")
-menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit"]
+# --- 3. DYNAMIC NAVIGATION ---
+st.sidebar.title(f"👤 {st.session_state.role}")
+
+# Define which menu items each role can see
+if st.session_state.role == "Admin":
+    full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🛠️ Admin Controls")
+    dev_mode = st.sidebar.toggle("Developer Mode", value=True)
+    menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
+    st.sidebar.caption("Developer Mode: All pages visible")
+
+elif st.session_state.role == "Gas_Company":
+    menu = ["Dashboard", "Gas Co Upload", "Search Unit"]
+
+elif st.session_state.role == "Testing_Center":
+    menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
+
 choice = st.sidebar.radio("Navigation", menu)
+
+if st.sidebar.button("Logout"):
+    st.session_state.role = None
+    st.rerun()
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
@@ -287,6 +326,7 @@ elif choice == "Gas Co Upload":
                     st.cache_data.clear() # Refresh global data
                 except Exception as e:
                     st.error(f"Error during upload: {e}")
+
 
 
 
