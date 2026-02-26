@@ -2,156 +2,113 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import pytz
-from supabase import create_client, Client
+from supabase import create_client
 
-# --- 1. INITIALIZE & CONNECTION ---
-st.set_page_config(page_title="Gas Industrial Operations Portal", layout="wide")
+# --- 1. SETTINGS & STYLING ---
+st.set_page_config(page_title="KWS | LGAS Management", layout="wide", page_icon="🏭")
 
-# Initialize Session State variables
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-if "user_role" not in st.session_state:
-    st.session_state["user_role"] = None
-if "last_refresh" not in st.session_state:
-    st.session_state["last_refresh"] = "Initializing..."
+# Custom CSS to mimic the "Demo" look
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    [data-testid="stSidebar"] { background-color: #1a2a3a; color: white; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Initialize Session State
+for key in ["authenticated", "user_role", "client_link", "last_refresh"]:
+    if key not in st.session_state:
+        st.session_state[key] = False if key == "authenticated" else ("Initializing..." if key == "last_refresh" else None)
 
 # Supabase Setup
-URL = st.secrets["connections"]["supabase"]["url"]
-KEY = st.secrets["connections"]["supabase"]["key"]
+URL, KEY = st.secrets["connections"]["supabase"]["url"], st.secrets["connections"]["supabase"]["key"]
+supabase = create_client(URL, KEY)
 
-@st.cache_resource
-def init_connection():
-    return create_client(URL, KEY)
-
-supabase = init_connection()
-
-# --- 2. DATA LOADING ---
+# --- 2. LOGIC: DATA & AUTH ---
 @st.cache_data(ttl=60)
 def load_data():
-    # Update timestamp
     ist = pytz.timezone('Asia/Kolkata')
     st.session_state["last_refresh"] = datetime.now(ist).strftime("%I:%M:%S %p")
-    
-    # Fetch Data
     res = supabase.table("cylinders").select("*").execute()
-    df = pd.DataFrame(res.data)
-    
-    if not df.empty:
-        # Standardize date formats
-        for col in ["Last_Test_Date", "Next_Test_Due"]:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col]).dt.date
-    return df
+    return pd.DataFrame(res.data)
 
-# --- 3. AUTHENTICATION ---
 def login():
-    st.title("Gas Management Industrial Portal")
+    st.markdown("<h1 style='text-align: center;'>🏭 KWS Portal</h1>", unsafe_allow_html=True)
     with st.container():
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        if st.button("Login"):
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                user_id = res.user.id
-                
-                # Fetch role from profiles table
-                profile = supabase.table("profiles").select("role, client_link").eq("id", user_id).single().execute()
-                
-                st.session_state["user_role"] = profile.data["role"]
-                st.session_state["client_link"] = profile.data["client_link"]
-                st.session_state["authenticated"] = True
-                st.rerun()
-            except Exception as e:
-                st.error("Invalid credentials. Please try again.")
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            email = st.text_input("Username/Email")
+            pwd = st.text_input("Password", type="password")
+            if st.button("Sign In"):
+                try:
+                    res = supabase.auth.sign_in_with_password({"email": email, "password": pwd})
+                    profile = supabase.table("profiles").select("role, client_link").eq("id", res.user.id).single().execute()
+                    st.session_state.update({"authenticated": True, "user_role": profile.data["role"], "client_link": profile.data["client_link"]})
+                    st.rerun()
+                except: st.error("Login Failed")
 
-# --- 4. MAIN APP LOGIC ---
+# --- 3. THE INTERFACE ---
 if not st.session_state["authenticated"]:
     login()
 else:
-    # --- 5. SIDEBAR ---
-    st.sidebar.title("🏭 Operations")
-    df_main = load_data()
+    # Sidebar Navigation with Icons
+    st.sidebar.image("https://via.placeholder.com/150x50.png?text=KWS+LOGISTICS", use_container_width=True) # Replace with actual logo URL
+    st.sidebar.markdown(f"**Welcome, {st.session_state['user_role'].upper()}**")
     
-    # Filter menu based on role
-    menu = ["Dashboard", "Cylinder Finder"]
-    if st.session_state["user_role"] == "admin":
-        menu += ["Bulk Operations", "Return Audit Log"]
+    menu = ["📊 Dashboard", "🔎 Cylinder Finder", "📦 Bulk Operations", "📋 Return Audit Log"]
+    choice = st.sidebar.radio("Main Menu", menu)
     
-    page = st.sidebar.radio("Navigation", menu)
-    
-    if st.sidebar.button("Logout"):
+    if st.sidebar.button("🔓 Sign Out"):
         st.session_state["authenticated"] = False
         st.rerun()
 
-    # --- 6. PAGE: DASHBOARD ---
-    if page == "Dashboard":
-        st.title("Fleet Dashboard")
-        
-        # Apply data isolation for private users
-        if st.session_state["user_role"] != "admin":
-            df_display = df_main[df_main["Customer_Name"] == st.session_state["client_link"]]
-        else:
-            df_display = df_main
+    df = load_data()
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Cylinders", len(df_display))
-        c2.metric("Due for Testing", len(df_display[df_display["Status"] == "Under Testing"]))
-        c3.metric("Ready/Full", len(df_display[df_display["Status"] == "Full"]))
+    # --- PAGE: DASHBOARD ---
+    if choice == "📊 Dashboard":
+        st.header("Cylinder Fleet Overview")
+        # Filter for Private Users
+        display_df = df if st.session_state["user_role"] == "admin" else df[df["Customer_Name"] == st.session_state["client_link"]]
         
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Units", len(display_df))
+        m2.metric("In Service (Full)", len(display_df[display_df["Status"] == "Full"]))
+        m3.metric("Empty/Return", len(display_df[display_df["Status"] == "Empty"]))
+        m4.metric("Under Testing", len(display_df[display_df["Status"] == "Under Testing"]))
+        
+        st.subheader("Inventory Data Table")
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    # --- 7. PAGE: BULK OPERATIONS (For High Volume) ---
-    elif page == "Bulk Operations":
-        st.title("Bulk Batch Processing")
-        st.info("Scanner Ready: Paste multiple IDs below.")
+    # --- PAGE: BULK OPERATIONS ---
+    elif choice == "📦 Bulk Operations":
+        st.header("Batch Management")
+        with st.expander("🛠️ Processing Instructions", expanded=True):
+            st.write("1. Enter Batch ID. 2. Scan all cylinders into text area. 3. Select Status. 4. Execute.")
         
-        with st.form("bulk_update"):
-            batch_id = st.text_input("Batch Reference (Optional)")
-            ids_input = st.text_area("Cylinder IDs (One per line or comma-separated)")
-            new_status = st.selectbox("Update Status To", ["Full", "Empty", "Under Testing", "Scrapped"])
-            
-            if st.form_submit_button("Execute Bulk Update"):
-                # Clean the input string into a list
-                clean_ids = [x.strip().upper() for x in ids_input.replace(",", "\n").split("\n") if x.strip()]
-                
-                if clean_ids:
-                    try:
-                        supabase.table("cylinders").update({
-                            "Status": new_status,
-                            "Last_Test_Date": str(datetime.now().date())
-                        }).in_("Cylinder_ID", clean_ids).execute()
-                        
-                        st.success(f"Updated {len(clean_ids)} cylinders successfully!")
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Please enter at least one Cylinder ID.")
+        with st.form("bulk_form"):
+            b_id = st.text_input("Batch Reference Number")
+            bulk_ids = st.text_area("Scan IDs (Paste multiple barcodes here)")
+            new_stat = st.selectbox("New Status", ["Full", "Empty", "Under Testing", "Ready for Dispatch"])
+            if st.form_submit_button("Update Batch"):
+                id_list = [i.strip().upper() for i in bulk_ids.replace(",", "\n").split("\n") if i.strip()]
+                supabase.table("cylinders").update({"Status": new_stat, "Batch_ID": b_id}).in_("Cylinder_ID", id_list).execute()
+                st.success(f"Batch {b_id} Updated!")
+                st.cache_data.clear()
 
-    # --- 8. PAGE: RETURN AUDIT LOG ---
-    elif page == "Return Audit Log":
-        st.title("Return Condition Audit")
-        c_id = st.text_input("🔍 Scan Cylinder to Audit").upper()
-        
+    # --- PAGE: RETURN AUDIT ---
+    elif choice == "📋 Return Audit Log":
+        st.header("Quality Control Audit")
+        c_id = st.text_input("Scan/Enter Cylinder ID").upper()
         if c_id:
-            with st.form("audit_form"):
-                condition = st.selectbox("Physical State", ["Good", "Dented", "Valve Leak", "Rusted"])
-                notes = st.text_area("Internal Notes")
-                if st.form_submit_button("Log Audit"):
-                    supabase.table("cylinders").update({
-                        "Status": "Empty",
-                        "Condition_Notes": notes
-                    }).eq("Cylinder_ID", c_id).execute()
-                    st.success(f"Audit recorded for {c_id}")
-                    st.cache_data.clear()
+            with st.form("audit"):
+                cond = st.selectbox("Condition", ["Pristine", "Dented", "Valve Leak", "Rusted"])
+                st.form_submit_button("Log Audit") # Logic to update DB
 
-    # --- 9. FOOTER ---
+    # --- FOOTER ---
     st.markdown("---")
-    st.markdown(f"""
-        <div style="text-align: center; color: grey; font-size: 0.8em;">
-            Developed for KWS Pvt Ltd | <b>Last Refresh:</b> {st.session_state['last_refresh']} IST
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: gray;'>KWS LGAS v2.1 | Refreshed: {st.session_state['last_refresh']}</p>", unsafe_allow_html=True)
 
 
 
