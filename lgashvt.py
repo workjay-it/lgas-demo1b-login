@@ -171,51 +171,7 @@ elif choice == "Bulk Processing":
                 st.success(f"Production data for {selected_b} synced to cloud.")
                 st.cache_data.clear()
 
-# --- PAGE: FINANCIAL & BILLING (Office View) ---
-elif choice == "Financial & Billing":
-    st.header("Batch Reconciliation & Financials")
-    
-    # Financial Configuration (Rate Card)
-    RATE_CARD = {
-        "Good / No Repair": 0,
-        "Valve Leak (Minor)": 150,
-        "Valve Replacement": 450,
-        "Body Dent Repair": 300,
-        "Re-painting Required": 200,
-        "Foot Ring Straightening": 250,
-        "Condemned": 0
-    }
-
-    df = load_cylinders()
-    if not df.empty:
-        unique_batches = df["Batch_ID"].dropna().unique().tolist()
-        target_b = st.selectbox("Select Batch for Billing", unique_batches)
-        
-        batch_data = df[df["Batch_ID"] == target_b]
-        
-        # Financial Calculations
-        batch_data["Cost"] = batch_data["Condition_Notes"].map(RATE_CARD).fillna(0)
-        total_bill = batch_data["Cost"].sum()
-        
-        # Display Financial Dashboard
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Batch Size", len(batch_data))
-        col2.metric("Billable Repairs", len(batch_data[batch_data["Cost"] > 0]))
-        col3.metric("Total Invoice Value", f"₹{total_bill:,.2f}")
-        
-        st.markdown("---")
-        st.subheader("Line-Item Breakdown")
-        
-        # Show specific costs per cylinder for the client
-        st.dataframe(
-            batch_data[["Cylinder_ID", "Condition_Notes", "Cost"]][batch_data["Cost"] > 0],
-            use_container_width=True, hide_index=True
-        )
-        
-        if st.button("Generate Digital Receipt (CSV)"):
-            csv = batch_data[["Cylinder_ID", "Condition_Notes", "Cost"]].to_csv(index=False)
-            st.download_button("Download CSV for Client", csv, f"Billing_{target_b}.csv", "text/csv")
-            
+           
 # --- PAGE: SEARCH ---
 elif choice == "Inventory Search":
     st.header("Unit Traceability")
@@ -234,6 +190,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
