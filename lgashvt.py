@@ -179,7 +179,7 @@ elif choice == "Financial & Billing":
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
     st.header("🚚 New Truck Arrival")
-    st.info("Register incoming shipments here. All Batch IDs and Truck Plates will be auto-formatted to uppercase.")
+    st.info("Register incoming shipments here")
     
     # 1. Define standard clients
     companies = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
@@ -190,7 +190,7 @@ elif choice == "Truck Intake":
         
         with col1:
             # User input for Batch ID
-            new_batch = st.text_input("New Batch ID (e.g., BATCH017)")
+            new_batch = st.text_input("New Batch ID (e.g., BATCH012)")
             # Selection for existing company
             selected_company = st.selectbox("Company Name", companies)
             
@@ -248,6 +248,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
