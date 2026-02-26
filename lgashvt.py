@@ -48,7 +48,7 @@ choice = st.sidebar.radio("Navigation", menu)
 df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
-# --- PAGE: DASHBOARD ---
+
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
     
@@ -57,7 +57,7 @@ if choice == "Dashboard":
     else:
         # 1. NEW: Top Level Company Filter
         all_companies = ["All Companies"] + sorted([c for c in df["Customer_Name"].dropna().unique()])
-        target_company = st.selectbox("🏢 Select Company to View", all_companies)
+        target_company = st.selectbox("Select Company to View", all_companies)
         
         # Apply the filter
         if target_company != "All Companies":
@@ -97,16 +97,28 @@ if choice == "Dashboard":
             final_display = filtered_df if selected_batch == "All Active Batches" else filtered_df[filtered_df["Batch_ID"] == selected_batch]
             st.dataframe(final_display, use_container_width=True, hide_index=True)
 
-        # 5. SAFETY ALERTS (Still works for the whole fleet)
-        today = datetime.now().date()
+# 5. SAFETY ALERTS (Fixed for Data Types)
+        st.markdown("---")
+        
+        # Ensure the column is converted to datetime format first
+        df["Next_Test_Due"] = pd.to_datetime(df["Next_Test_Due"], errors='coerce')
+        
+        today = datetime.now()
         next_week = today + timedelta(days=7)
-        alerts = df[df["Next_Test_Due"] <= str(next_week)] # Ensure string comparison if needed
+        
+        # Filter for dates that are today or in the past (Expired) 
+        # OR within the next 7 days (Expiring Soon)
+        alerts = df[df["Next_Test_Due"] <= next_week]
         
         if not alerts.empty:
-            st.markdown("---")
             st.error(f"🚨 Compliance Alert: {len(alerts)} Units requiring immediate re-testing.")
             with st.expander("View Expired/Due Units"):
-                st.dataframe(alerts[["Cylinder_ID", "Customer_Name", "Batch_ID", "Next_Test_Due"]], use_container_width=True)
+                # Format the date for display so it looks clean
+                display_alerts = alerts[["Cylinder_ID", "Customer_Name", "Batch_ID", "Next_Test_Due"]].copy()
+                display_alerts["Next_Test_Due"] = display_alerts["Next_Test_Due"].dt.strftime('%Y-%m-%d')
+                st.dataframe(display_alerts, use_container_width=True, hide_index=True)
+        else:
+            st.success("All units are currently within test-date compliance.")
 
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
@@ -198,6 +210,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
