@@ -179,68 +179,41 @@ elif choice == "Financial & Billing":
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
     st.header("🚚 New Truck Arrival")
-    st.info("Register incoming shipments here")
     
-    # 1. Define standard clients
     companies = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
     
-    # 2. Registration Form
     with st.form("truck_entry", clear_on_submit=True):
         col1, col2 = st.columns(2)
-        
         with col1:
-            # User input for Batch ID
-            new_batch = st.text_input("New Batch ID (e.g., BATCH012)")
-            # Selection for existing company
+            new_batch = st.text_input("New Batch ID (e.g., BATCH017)")
             selected_company = st.selectbox("Company Name", companies)
-            
         with col2:
             truck_no = st.text_input("Truck Plate Number")
             driver = st.text_input("Driver Name")
             
-        # Optional: Manual timestamp adjustment (defaults to now)
-        arrival_dt = st.datetime_input("Arrival Date & Time", value=datetime.now())
-            
         if st.form_submit_button("Confirm Arrival"):
-            # --- DATA CLEANING LOGIC ---
-            # .strip() removes accidental spaces, .upper() makes it BATCH017
             clean_batch_id = new_batch.strip().upper()
-            clean_truck_no = truck_no.strip().upper()
-            clean_driver = driver.strip().title() # Capitalizes first letter of names
             
-            if clean_batch_id and clean_truck_no:
+            if clean_batch_id:
                 try:
-                    # 3. Database Insertion
                     supabase.table("batches").insert({
                         "batch_id": clean_batch_id,
                         "company": selected_company,
-                        "truck_number": clean_truck_no,
-                        "driver_name": clean_driver,
-                        "arrival_time": str(arrival_dt)
+                        "truck_number": truck_no.strip().upper(),
+                        "driver_name": driver.strip().title(),
+                        "arrival_time": str(datetime.now())
                     }).execute()
                     
-                    # 4. CRITICAL: Clear cache so Dashboard sees the new data
+                    # 1. Clear cache to force fresh data fetch
                     st.cache_data.clear()
                     
-                    st.success(f"✅ Success! Batch {clean_batch_id} for {selected_company} registered.")
-                    st.balloons() # Visual feedback for a successful arrival
+                    # 2. Success message (Balloons removed)
+                    st.success(f"✅ Batch {clean_batch_id} registered successfully.")
                     
                 except Exception as e:
-                    st.error(f"Database Error: {e}")
+                    st.error(f"Error: {e}")
             else:
-                st.warning("Please provide both a Batch ID and a Truck Plate Number.")
-
-    # 5. RECENT ACTIVITY PREVIEW
-    st.markdown("---")
-    st.subheader("Last 5 Registered Trucks")
-    try:
-        recent_res = supabase.table("batches").select("*").order("created_at", desc=True).limit(5).execute()
-        if recent_res.data:
-            recent_df = pd.DataFrame(recent_res.data)
-            # Only show relevant columns for the gate clerk
-            st.table(recent_df[["batch_id", "company", "truck_number", "driver_name"]])
-    except:
-        st.info("Arrival log will appear here once trucks are registered.")
+                st.warning("Please enter a Batch ID.")
             
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
@@ -248,6 +221,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
