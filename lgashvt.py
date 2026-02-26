@@ -65,7 +65,7 @@ if choice == "Dashboard":
         # FIX: The generation script used 'Batch_ID', but the Intake form uses 'batch_id'
         # This standardizes them so the merge works perfectly
         if "Batch_ID" in c_df.columns:
-            c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
+            c_df = c_df.rename(columns={"batch_id": "batch_id"})
         
         # LEFT JOIN: Keeps all batches (trucks) even if they have 0 cylinders assigned
         return pd.merge(b_df, c_df, on="batch_id", how="left")
@@ -231,6 +231,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
