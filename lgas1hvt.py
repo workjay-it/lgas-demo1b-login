@@ -116,7 +116,7 @@ else:
     elif choice == "Bulk Operations":
         st.header("Bulk & Batch Management")
         
-        # TAB 1: Standard Bulk Update
+        # 1. Simple Bulk Update
         st.subheader("Simple Bulk Update")
         with st.form("bulk_form"):
             bulk_input = st.text_area("Paste IDs (One per line)")
@@ -130,29 +130,53 @@ else:
 
         st.markdown("---")
         
-        # TAB 2: Batch Triage (The code you asked for)
-        st.subheader("Batch Triage (Partial Processing / Damaged Goods)")
+        # 2. Batch Triage
+        st.subheader("Batch Triage (Partial Processing)")
         with st.form("triage_form"):
-            parent_batch = st.text_input("Source Batch ID (e.g., TRUCK-101)")
-            scanned_subset = st.text_area("Scan the processed cylinders from this batch")
+            parent_batch = st.text_input("Source Batch ID (Truck/Shipment #)")
+            scanned_subset = st.text_area("Scan the processed cylinders")
             col1, col2 = st.columns(2)
             with col1:
-                outcome = st.selectbox("Test Outcome", ["Passed/Full", "Damaged/Quarantine", "Needs Valve Replacement"])
+                outcome = st.selectbox("Test Outcome", ["Passed/Full", "Damaged/Quarantine", "Needs Maintenance"])
             with col2:
                 action_date = st.date_input("Processing Date")
             
             if st.form_submit_button("Log Triage Results"):
                 id_list = [i.strip().upper() for i in scanned_subset.replace(",", "\n").split("\n") if i.strip()]
                 if id_list:
-                    status_map = {"Passed/Full": "Full", "Damaged/Quarantine": "Damaged", "Needs Valve Replacement": "Under Maintenance"}
+                    status_map = {"Passed/Full": "Full", "Damaged/Quarantine": "Damaged", "Needs Maintenance": "Under Maintenance"}
                     supabase.table("cylinders").update({
                         "Status": status_map[outcome],
                         "Batch_ID": parent_batch,
-                        "Condition_Notes": f"Batch {parent_batch} Triage: {outcome}",
+                        "Condition_Notes": f"Triage Result: {outcome}",
                         "Last_Test_Date": str(action_date)
                     }).in_("Cylinder_ID", id_list).execute()
                     st.success(f"Processed {len(id_list)} units from {parent_batch}")
                     st.cache_data.clear()
+
+        st.markdown("---")
+        
+        # 3. NEW: BATCH RECONCILIATION REPORT
+        st.subheader("Batch Reconciliation Report")
+        if not df.empty and "Batch_ID" in df.columns:
+            # Filter out rows with no Batch ID
+            batch_df = df[df["Batch_ID"].notna() & (df["Batch_ID"] != "")]
+            
+            if not batch_df.empty:
+                # Group data to see stats per batch
+                report = batch_df.groupby("Batch_ID").agg(
+                    Total_Units=("Cylinder_ID", "count"),
+                    Passed_Full=("Status", lambda x: (x == "Full").sum()),
+                    Damaged_Units=("Status", lambda x: (x == "Damaged").sum()),
+                    Still_Testing=("Status", lambda x: (x == "Under Testing").sum())
+                ).reset_index()
+                
+                # Calculate Pass Rate percentage
+                report["Pass_Rate_%"] = ((report["Passed_Full"] / report["Total_Units"]) * 100).round(1)
+                
+                st.dataframe(report, use_container_width=True, hide_index=True)
+            else:
+                st.info("No active batches found in inventory.")
 
     elif choice == "Return Audit Log":
         st.header("Individual Return Audit")
@@ -167,12 +191,6 @@ else:
 
     st.markdown("---")
     st.markdown(f"<div style='text-align: center; color: gray;'>KWS LGAS | Refreshed: {st.session_state['last_refresh']}</div>", unsafe_allow_html=True)
-
-
-
-
-
-
 
 
 
