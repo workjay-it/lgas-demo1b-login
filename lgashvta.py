@@ -32,7 +32,7 @@ def login():
                 st.session_state.role = "Admin"
             elif user == "gasco" and pwd == "gas2026":
                 st.session_state.role = "Gas Company"
-            elif user == "testcenter" and pwd == "test99":
+            elif user == "testco" and pwd == "test99":
                 st.session_state.role = "Test Center"
             else:
                 st.error("Invalid credentials")
@@ -334,6 +334,7 @@ elif choice == "Gas Co Upload":
                     st.cache_data.clear() # Refresh global data
                 except Exception as e:
                     st.error(f"Error during upload: {e}")
+
 
 
 
