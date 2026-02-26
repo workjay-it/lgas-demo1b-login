@@ -48,17 +48,35 @@ choice = st.sidebar.radio("Navigation", menu)
 df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
+# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
     
     if df.empty:
         st.warning("No data found. Please import your 10-batch CSV to Supabase.")
     else:
-        # 1. BATCH SUMMARY TABLE (The New Primary View)
-        st.subheader("Batch Performance Overview")
+        # 1. NEW: Top Level Company Filter
+        all_companies = ["All Companies"] + sorted([c for c in df["Customer_Name"].dropna().unique()])
+        target_company = st.selectbox("🏢 Select Company to View", all_companies)
         
-        # Calculate stats for every batch automatically
-        batch_summary = df.groupby("Batch_ID").agg(
+        # Apply the filter
+        if target_company != "All Companies":
+            filtered_df = df[df["Customer_Name"] == target_company]
+        else:
+            filtered_df = df
+
+        # 2. HIGH-LEVEL METRICS
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Total Units ({target_company})", len(filtered_df))
+        c2.metric("Damaged Units", len(filtered_df[filtered_df["Status"] == "Damaged"]))
+        c3.metric("Ready to Dispatch", len(filtered_df[filtered_df["Status"] == "Full"]))
+
+        st.markdown("---")
+
+        # 3. BATCH PERFORMANCE OVERVIEW (The Table you liked)
+        st.subheader(f"Batch Performance Overview: {target_company}")
+        
+        batch_summary = filtered_df.groupby("Batch_ID").agg(
             Total_Units=("Cylinder_ID", "count"),
             Full=("Status", lambda x: (x == "Full").sum()),
             Damaged=("Status", lambda x: (x == "Damaged").sum()),
@@ -67,41 +85,28 @@ if choice == "Dashboard":
         
         st.dataframe(batch_summary, use_container_width=True, hide_index=True)
 
-        st.markdown("---")
-
-        # 2. DRILL-DOWN SECTION
+        # 4. THE TOGGLE (Drill-Down Section)
         st.subheader("Detailed Inspection")
-        
-        # Toggle to show/hide the big list
         show_details = st.toggle("Show Individual Cylinder Details", value=False)
         
         if show_details:
-            # Dropdown to pick which batch to inspect
-            unique_batches = ["All Units"] + sorted(df["Batch_ID"].dropna().unique().tolist())
-            selected_batch = st.selectbox("Select Batch to Inspect", unique_batches)
+            # Filters the drill-down to only the batches belonging to the selected company
+            unique_batches = ["All Active Batches"] + sorted(filtered_df["Batch_ID"].unique().tolist())
+            selected_batch = st.selectbox("Inspect Specific Batch", unique_batches)
             
-            display_df = df if selected_batch == "All Units" else df[df["Batch_ID"] == selected_batch]
-            
-            # Show Metrics for just this selection
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Selected Units", len(display_df))
-            c2.metric("Damaged in Selection", len(display_df[display_df["Status"] == "Damaged"]))
-            c3.metric("Available Full", len(display_df[display_df["Status"] == "Full"]))
-            
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("Toggle 'Show Individual Cylinder Details' above to see specific serial numbers and test dates.")
+            final_display = filtered_df if selected_batch == "All Active Batches" else filtered_df[filtered_df["Batch_ID"] == selected_batch]
+            st.dataframe(final_display, use_container_width=True, hide_index=True)
 
-        # 3. SAFETY ALERTS (Only shows if there is a crisis)
+        # 5. SAFETY ALERTS (Still works for the whole fleet)
         today = datetime.now().date()
         next_week = today + timedelta(days=7)
-        alerts = df[df["Next_Test_Due"] <= next_week]
+        alerts = df[df["Next_Test_Due"] <= str(next_week)] # Ensure string comparison if needed
         
         if not alerts.empty:
             st.markdown("---")
-            st.error(f"Compliance Alert: {len(alerts)} Units requiring immediate re-testing.")
+            st.error(f"🚨 Compliance Alert: {len(alerts)} Units requiring immediate re-testing.")
             with st.expander("View Expired/Due Units"):
-                st.dataframe(alerts[["Cylinder_ID", "Batch_ID", "Next_Test_Due", "Status"]], use_container_width=True)
+                st.dataframe(alerts[["Cylinder_ID", "Customer_Name", "Batch_ID", "Next_Test_Due"]], use_container_width=True)
 
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
@@ -159,45 +164,41 @@ elif choice == "Financial & Billing":
         
         st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], use_container_width=True)
 
-# --- PAGE: TRUCK INTAKE (With Company Selection) ---
+# --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
-    st.header("New Batch Registration")
+    st.header("New Truck Arrival")
     
-    # List of your primary clients
-    CLIENT_LIST = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
-
-    with st.form("new_batch", clear_on_submit=True):
+    # Define your standard clients
+    companies = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
+    
+    with st.form("truck_entry"):
         col1, col2 = st.columns(2)
         with col1:
-            b_id = st.text_input("Batch ID (e.g., BATCH011)")
-            # New Company Dropdown
-            company = st.selectbox("Select Customer/Company", CLIENT_LIST)
-            truck = st.text_input("Truck Plate Number")
+            # The user creates a NEW Batch ID for THIS specific truck
+            new_batch = st.text_input("New Batch ID (e.g., BATCH021)")
+            # But selects an EXISTING Company
+            selected_company = st.selectbox("Company Name", companies)
         with col2:
+            truck_no = st.text_input("Truck Plate Number")
             driver = st.text_input("Driver Name")
-            arrival_dt = st.datetime_input("Arrival Date & Time", value=datetime.now())
-        
-        if st.form_submit_button("Register Arrival"):
-            if b_id and truck:
-                try:
-                    supabase.table("batches").insert({
-                        "batch_id": b_id, 
-                        "company": company,  # Links the batch to the company
-                        "truck_number": truck, 
-                        "driver_name": driver,
-                        "arrival_time": str(arrival_dt)
-                    }).execute()
-                    st.success(f"✅ {company} Batch {b_id} registered!")
-                    st.cache_data.clear()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                
+            
+        if st.form_submit_button("Confirm Arrival"):
+            supabase.table("batches").insert({
+                "batch_id": new_batch,
+                "company": selected_company,
+                "truck_number": truck_no,
+                "driver_name": driver,
+                "arrival_time": str(datetime.now())
+            }).execute()
+            st.success(f"Truck registered! Batch {new_batch} is now linked to {selected_company}.")
+            
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
     sid = st.text_input("Search ID").upper()
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
