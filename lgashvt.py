@@ -40,8 +40,8 @@ def load_batches():
     return pd.DataFrame(res.data)
 
 # --- 3. NAVIGATION ---
-st.sidebar.title("KWS Logistics Hub")
-menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit"]
+st.sidebar.title("Gas Logistics Hub")
+menu = ["Dashboard", "Bulk Processing", "Financial & Billing", "Truck Intake", "Search Unit"]
 choice = st.sidebar.radio("Navigation", menu)
 
 # Global Data Load
@@ -64,7 +64,7 @@ if choice == "Dashboard":
         # FIX: Ensure both dataframes use lowercase 'batch_id'
         # This handles the case where your generated data used 'Batch_ID'
         if "Batch_ID" in c_df.columns:
-            c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
+            c_df = c_df.rename(columns={"batch_id": "batch_id"})
         
         # LEFT JOIN: This is why you see 11 trucks but only 500 cylinders
         # It keeps all batches even if they have no cylinders yet
@@ -139,7 +139,7 @@ elif choice == "Bulk Processing (Workers)":
         st.warning("Register a Batch in 'Truck Intake' first.")
     else:
         selected_b = st.selectbox("Select Batch to Work On", batches_df["batch_id"].tolist())
-        batch_cyls = df[df["Batch_ID"] == selected_b].copy()
+        batch_cyls = df[df["batch_id"] == selected_b].copy()
         
         if batch_cyls.empty:
             st.info("No cylinders linked to this batch yet.")
@@ -177,7 +177,7 @@ elif choice == "Financial & Billing":
     
     if not df.empty:
         target_b = st.selectbox("Select Batch for Billing", df["Batch_ID"].unique())
-        batch_data = df[df["Batch_ID"] == target_b].copy()
+        batch_data = df[df["batch_id"] == target_b].copy()
         batch_data["Cost"] = batch_data["Condition_Notes"].map(RATE_CARD).fillna(0)
         
         c1, c2 = st.columns(2)
@@ -231,6 +231,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
