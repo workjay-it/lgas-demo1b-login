@@ -7,14 +7,38 @@ from supabase import create_client
 # --- 1. SETTINGS & STYLING ---
 st.set_page_config(page_title="KWS | LGAS Management", layout="wide", page_icon="🏭")
 
-# Custom CSS for the "Professional Dashboard" look
+# Custom CSS: FIXED for Dark Mode (Removes White Background from Metrics)
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e1e4e8; }
+    /* Main background to match Streamlit dark theme */
+    .main { background-color: #0e1117; }
+    
+    /* Metric Cards: Now Dark Grey with Light Text */
+    [data-testid="stMetric"] {
+        background-color: #1e2129;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        border: 1px solid #31333f;
+    }
+    
+    /* Ensure metric text is white/light */
+    [data-testid="stMetricValue"] { color: #ffffff !important; }
+    [data-testid="stMetricLabel"] { color: #808495 !important; }
+
+    /* Sidebar Styling */
     [data-testid="stSidebar"] { background-color: #1a2a3a; color: white; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; font-weight: bold; }
-    .stDataFrame { background-color: white; border-radius: 10px; }
+    
+    /* Button Styling */
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 5px; 
+        height: 3em; 
+        background-color: #007bff; 
+        color: white; 
+        font-weight: bold; 
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,12 +70,11 @@ def load_data():
     return df
 
 def login():
-    st.markdown("<h1 style='text-align: center; color: #1a2a3a;'>🏭 KWS Industrial Portal</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🏭 KWS Industrial Portal</h1>", unsafe_allow_html=True)
     with st.container():
         _, col, _ = st.columns([1, 1.5, 1])
         with col:
-            st.markdown("### Secure Login")
-            email = st.text_input("Email/Username")
+            email = st.text_input("Email")
             pwd = st.text_input("Password", type="password")
             if st.button("Sign In"):
                 try:
@@ -64,112 +87,83 @@ def login():
                     })
                     st.rerun()
                 except:
-                    st.error("Invalid credentials. Please try again.")
+                    st.error("Invalid credentials.")
 
 # --- 3. MAIN INTERFACE ---
 if not st.session_state["authenticated"]:
     login()
 else:
     # Sidebar
-    st.sidebar.markdown(f"### 🏭 KWS Logistics")
-    st.sidebar.markdown(f"**User:** `{st.session_state['user_role'].upper()}`")
+    st.sidebar.markdown(f"### KWS Logistics")
+    st.sidebar.markdown(f"**Role:** `{st.session_state['user_role'].upper()}`")
     
-    menu = ["📊 Dashboard", "🔎 Cylinder Finder"]
+    menu = ["Dashboard", "Cylinder Finder"]
     if st.session_state["user_role"] == "admin":
-        menu += ["📦 Bulk Operations", "📋 Return Audit Log"]
+        menu += ["Bulk Operations", " Return Audit Log"]
     
     choice = st.sidebar.radio("Main Menu", menu)
     
-    if st.sidebar.button("🔓 Sign Out"):
+    if st.sidebar.button(" Sign Out"):
         st.session_state["authenticated"] = False
         st.rerun()
 
     df = load_data()
 
     # --- PAGE: DASHBOARD ---
-    if choice == "📊 Dashboard":
+    if choice == "Dashboard":
         st.header("Cylinder Fleet Overview")
-        # Isolation Logic
         display_df = df if st.session_state["user_role"] == "admin" else df[df["Customer_Name"] == st.session_state["client_link"]]
         
+        # Metrics with the new Dark Backgrounds
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Inventory", len(display_df))
-        m2.metric("Status: Full", len(display_df[display_df["Status"] == "Full"]))
-        m3.metric("Status: Empty", len(display_df[display_df["Status"] == "Empty"]))
+        m2.metric("In Service (Full)", len(display_df[display_df["Status"] == "Full"]))
+        m3.metric("Empty/Return", len(display_df[display_df["Status"] == "Empty"]))
         m4.metric("Under Testing", len(display_df[display_df["Status"] == "Under Testing"]))
         
         st.subheader("Inventory Details")
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     # --- PAGE: CYLINDER FINDER ---
-    elif choice == "🔎 Cylinder Finder":
-        st.header("Search Individual Unit")
-        search_id = st.text_input("Scan or Enter Cylinder ID").strip().upper()
+    elif choice == "Cylinder Finder":
+        st.header("Unit Search")
+        search_id = st.text_input("Scan Cylinder ID").strip().upper()
         if search_id:
             res = df[df["Cylinder_ID"] == search_id]
             if not res.empty:
-                st.success(f"Record found for {search_id}")
-                st.write(res.T) # Transposed view for better readability
+                st.write(res.T)
             else:
-                st.error("Cylinder ID not found in system.")
+                st.error("Not found.")
 
-    # --- PAGE: BULK OPERATIONS (Scanner Optimized) ---
-    elif choice == "📦 Bulk Operations":
-        st.header("High-Volume Batch Processing")
-        st.info("Scanner Ready: Paste a list of IDs from your scanner into the box below.")
-        
+    # --- PAGE: BULK OPERATIONS (For Gas Company Lots) ---
+    elif choice == "Bulk Operations":
+        st.header("Bulk Batch Processing")
         with st.form("bulk_form"):
-            b_id = st.text_input("Batch Reference ID")
-            bulk_input = st.text_area("Cylinder IDs (One per line or comma-separated)")
-            new_stat = st.selectbox("Assign New Status", ["Full", "Empty", "Under Testing", "Ready for Dispatch"])
-            
-            if st.form_submit_button("🚀 Execute Batch Update"):
+            b_id = st.text_input("Batch ID")
+            bulk_input = st.text_area("Paste IDs (One per line)")
+            new_stat = st.selectbox("Status", ["Full", "Empty", "Under Testing"])
+            if st.form_submit_button("Update Batch"):
                 id_list = [i.strip().upper() for i in bulk_input.replace(",", "\n").split("\n") if i.strip()]
                 if id_list:
-                    try:
-                        supabase.table("cylinders").update({
-                            "Status": new_stat, 
-                            "Batch_ID": b_id,
-                            "Last_Test_Date": str(datetime.now().date())
-                        }).in_("Cylinder_ID", id_list).execute()
-                        st.success(f"Successfully updated {len(id_list)} cylinders.")
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Input area is empty.")
+                    supabase.table("cylinders").update({"Status": new_stat, "Batch_ID": b_id}).in_("Cylinder_ID", id_list).execute()
+                    st.success("Batch Updated!")
+                    st.cache_data.clear()
 
     # --- PAGE: RETURN AUDIT LOG ---
-    elif choice == "📋 Return Audit Log":
-        st.header("Quality Control: Incoming Returns")
-        scan_id = st.text_input("Scan Cylinder to Audit").strip().upper()
+    elif choice == "Return Audit Log":
+        st.header("Return Audit")
+        scan_id = st.text_input("Scan ID to Audit").strip().upper()
         if scan_id:
             with st.form("audit_form"):
-                cond = st.selectbox("Physical Condition", ["Good", "Dented", "Valve Leak", "Rusted", "Expired"])
-                notes = st.text_area("Audit Notes")
-                if st.form_submit_button("Log Audit & Mark Empty"):
-                    try:
-                        supabase.table("cylinders").update({
-                            "Status": "Empty",
-                            "Condition_Notes": f"{cond}: {notes}"
-                        }).eq("Cylinder_ID", scan_id).execute()
-                        st.success(f"Audit saved for {scan_id}")
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                cond = st.selectbox("Condition", ["Good", "Dented", "Leaking"])
+                if st.form_submit_button("Log Return"):
+                    supabase.table("cylinders").update({"Status": "Empty", "Condition_Notes": cond}).eq("Cylinder_ID", scan_id).execute()
+                    st.success(f"Audit saved for {scan_id}")
+                    st.cache_data.clear()
 
     # --- FOOTER ---
     st.markdown("---")
-    st.markdown(f"""
-        <div style="text-align: center; color: gray; font-size: 0.85em;">
-            KWS LGAS Management v2.1 | <b>Last Refresh:</b> {st.session_state['last_refresh']} IST
-        </div>
-    """, unsafe_allow_html=True)
-
-
-
-
-
+    st.markdown(f"<p style='text-align: center; color: gray;'>KWS LGAS | Last Refresh: {st.session_state['last_refresh']}</p>", unsafe_allow_html=True)
 
 
 
