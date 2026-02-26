@@ -50,49 +50,53 @@ df = load_cylinders()
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("📊 Fleet Intelligence & Batch Analytics")
-    
-    # 1. Fetch Fresh Data from both tables
-    @st.cache_data(ttl=600) # Optional: Cache for 10 mins, cleared by intake
-    def get_combined_data():
+
+    # 1. DATA FETCHING & UNIFICATION
+    # Using a cache to keep the app snappy, but it's cleared by your Intake form
+    @st.cache_data(ttl=600)
+    def get_unified_data():
+        # Fetch fresh rows from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
         
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        # Merge: Keep all batches, attach cylinders where they exist
-        # This ensures new batches with 0 cylinders appear in the list
-        return pd.merge(b_df, c_df, left_on="batch_id", right_on="Batch_ID", how="left")
+        # FIX: The generation script used 'Batch_ID', but the Intake form uses 'batch_id'
+        # This standardizes them so the merge works perfectly
+        if "Batch_ID" in c_df.columns:
+            c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
+        
+        # LEFT JOIN: Keeps all batches (trucks) even if they have 0 cylinders assigned
+        return pd.merge(b_df, c_df, on="batch_id", how="left")
 
-    full_df = get_combined_data()
+    full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No batch or cylinder data found.")
+        st.warning("No data found. Please register a truck or upload cylinder data.")
     else:
-        # 2. Top Level Company Filter
-        all_companies = ["All Companies"] + sorted([c for c in full_df["company"].dropna().unique()])
+        # 2. TOP LEVEL FILTER
+        # Note: We use the 'company' column from the batches table side of the join
+        all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
         target_company = st.selectbox("🏢 Select Company to View", all_companies)
         
-        # Apply filter
+        # Apply filtering logic
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
-        # 3. High-Level Metrics
-        # We count unique Batch IDs from the batches table side to see all trucks
-        total_trucks = display_df["batch_id"].nunique()
-        total_cylinders = display_df["Cylinder_ID"].count() # Doesn't count NaNs
-        damaged_count = (display_df["Status"] == "Damaged").sum()
-
+        # 3. HIGH-LEVEL METRICS
         m1, m2, m3 = st.columns(3)
-        m1.metric("Trucks in Yard", total_trucks)
-        m2.metric("Total Cylinders", total_cylinders)
-        m3.metric("Damaged Found", damaged_count)
+        # Unique count of batch IDs shows total trucks, even if empty
+        m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
+        # .count() only counts non-null values (actual cylinders)
+        m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
+        m3.metric("Damaged Found", (display_df["Status"] == "Damaged").sum())
 
         st.markdown("---")
 
-        # 4. Batch Performance Overview
+        # 4. BATCH PERFORMANCE OVERVIEW (Summary Table)
         st.subheader(f"Batch Performance: {target_company}")
         
-        # We group by batch details to see the status of each truckload
+        # We group by batch details to show the status of each truckload
         summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
             Total_Units=("Cylinder_ID", "count"),
             Ready=("Status", lambda x: (x == "Full").sum()),
@@ -100,31 +104,32 @@ if choice == "Dashboard":
             Empty=("Status", lambda x: (x == "Empty").sum())
         ).reset_index()
 
-        # Add a helpful status label for empty batches
-        summary["Load_Status"] = summary["Total_Units"].apply(lambda x: "📦 Waiting for Unload" if x == 0 else "⚙️ In Progress")
+        # Visual indicator for new trucks that haven't been unloaded yet
+        summary["Load_Status"] = summary["Total_Units"].apply(
+            lambda x: "📦 Waiting for Unload" if x == 0 else "⚙️ In Progress"
+        )
         
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
-        # 5. Detailed Inspection (Toggle)
+        # 5. DETAILED DRILL-DOWN (Individual Cylinders)
         with st.expander("🔍 Drill Down: Individual Cylinder Details"):
-            batch_list = ["All Batches"] + sorted(display_df["batch_id"].unique().tolist())
-            selected_b = st.selectbox("Filter details by Batch ID", batch_list)
-            
-            detail_view = display_df if selected_b == "All Batches" else display_df[display_df["batch_id"] == selected_b]
-            
-            # Drop the redundant Batch_ID column from the merge before displaying
-            st.dataframe(detail_view.drop(columns=["Batch_ID"], errors="ignore"), use_container_width=True, hide_index=True)
+            st.write("View specific cylinder data for the selected company.")
+            # Filter out the rows where Cylinder_ID is null (empty batches) for this view
+            detail_df = display_df[display_df["Cylinder_ID"].notna()]
+            st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
-        # 6. Safety Compliance (Across entire fleet)
+        # 6. SAFETY COMPLIANCE ALERTS
+        st.markdown("---")
         full_df["Next_Test_Due"] = pd.to_datetime(full_df["Next_Test_Due"], errors='coerce')
         today = datetime.now()
+        # Look for cylinders expiring within the next 7 days
         alerts = full_df[full_df["Next_Test_Due"] <= (today + timedelta(days=7))]
         
         if not alerts.empty:
-            st.error(f"🚨 Compliance Alert: {len(alerts)} units are overdue or expire within 7 days.")
-            if st.button("View Compliance List"):
-                st.write(alerts[["Cylinder_ID", "batch_id", "company", "Next_Test_Due"]])
-
+            st.error(f"🚨 Compliance Alert: {len(alerts)} units require re-testing.")
+            with st.expander("View Expired/Due Units"):
+                st.table(alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]])
+                
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -226,6 +231,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
