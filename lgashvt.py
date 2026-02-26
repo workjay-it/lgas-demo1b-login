@@ -237,16 +237,55 @@ elif choice == "Truck Intake":
             else:
                 st.warning("Please enter a Batch ID.")
 
+
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
-    st.header("🔍 Search Cylinder")
-    sid = st.text_input("Enter Cylinder ID").upper()
-    if sid:
-        res = df[df["Cylinder_ID"] == sid]
-        if not res.empty:
-            st.table(res)
+    st.header("Search Inventory")
+    
+    # 1. SEARCH CATEGORY SELECTION
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        search_type = st.selectbox(
+            "Search By", 
+            ["Cylinder ID", "Batch ID", "Truck Plate"]
+        )
+    with col2:
+        query = st.text_input(f"Enter {search_type}").strip().upper()
+
+    if query:
+        # Get the latest data for searching
+        search_df = get_unified_data()
+        
+        if search_df.empty:
+            st.warning("No data available to search.")
         else:
-            st.info("No cylinder found with that ID.")
+            # 2. SEARCH LOGIC
+            if search_type == "Cylinder ID":
+                results = search_df[search_df["Cylinder_ID"].astype(str).str.upper() == query]
+            
+            elif search_type == "Batch ID":
+                results = search_df[search_df["batch_id"].astype(str).str.upper() == query]
+            
+            elif search_type == "Truck Plate":
+                results = search_df[search_df["truck_number"].astype(str).str.upper() == query]
+
+            # 3. DISPLAY RESULTS
+            if not results.empty:
+                st.success(f"Found {len(results)} record(s) matching '{query}'")
+                
+                # If it's a Batch or Truck search, show a summary first
+                if search_type != "Cylinder ID":
+                    st.subheader("Summary")
+                    st.write(f"Company: {results['company'].iloc[0]}")
+                    st.write(f"Driver: {results['driver_name'].iloc[0]}")
+                
+                st.markdown("---")
+                st.subheader("Detailed Records")
+                # Using a scrollable dataframe for search results to keep it concise
+                st.dataframe(results, use_container_width=True, hide_index=True, height=400)
+            else:
+                st.info(f"No records found for {search_type}: {query}")
+
 
 
 
