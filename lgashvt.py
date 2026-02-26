@@ -43,45 +43,59 @@ choice = st.sidebar.radio("Navigation", menu)
 # --- PAGE: DASHBOARD ---
     if choice == "Dashboard":
         st.header("Real-Time Fleet Intelligence")
+        
+        # 1. Load Data
         df = load_cylinders()
         
         if df.empty:
-            st.info("The inventory is currently empty. Please import your CSV into the 'cylinders' table in Supabase to see the Batch filters.")
-            
-            # Show empty metrics
+            st.info("The inventory is currently empty. Please import your 10-batch CSV into Supabase.")
+            # Default empty metrics
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Total Units", 0)
-            m2.metric("Available", 0)
+            m1.metric("Units", 0)
+            m2.metric("Full", 0)
             m3.metric("Damaged", 0)
-            m4.metric("Pending", 0)
+            m4.metric("Empty", 0)
         else:
-            # 1. Batch Selector Filter
-            # Check if Batch_ID exists and has data
-            if "Batch_ID" in df.columns:
-                # Clean out None values for the dropdown
-                batch_list = df["Batch_ID"].dropna().unique().tolist()
-                available_batches = ["All Active Batches"] + sorted([str(b) for b in batch_list])
+            # 2. Batch Selector Logic
+            # We filter based on your Customer_Name (Security) and then by Batch
+            display_df = df if st.session_state["user_role"] == "admin" else df[df["Customer_Name"] == st.session_state["client_link"]]
+            
+            # Check if Batch_ID column exists to build the dropdown
+            if "Batch_ID" in display_df.columns:
+                unique_batches = display_df["Batch_ID"].dropna().unique().tolist()
+                batch_options = ["All Active Batches"] + sorted([str(b) for b in unique_batches])
                 
-                selected_batch = st.selectbox("Select Batch to Inspect", available_batches)
+                selected_batch = st.selectbox("Filter Dashboard by Shipment/Batch", batch_options)
                 
-                # Apply filter
-                display_df = df if selected_batch == "All Active Batches" else df[df["Batch_ID"] == selected_batch]
-            else:
-                display_df = df
-                st.warning("Column 'Batch_ID' not found in database.")
+                if selected_batch != "All Active Batches":
+                    display_df = display_df[display_df["Batch_ID"] == selected_batch]
 
-            # 2. Dynamic Metrics
+            # 3. Dynamic Metrics (Updates based on the dropdown above)
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Units in View", len(display_df))
             m2.metric("Available (Full)", len(display_df[display_df["Status"] == "Full"]))
             m3.metric("Quarantine (Damaged)", len(display_df[display_df["Status"] == "Damaged"]))
-            m4.metric("Pending Test", len(display_df[display_df["Status"] == "Empty"]))
+            m4.metric("Pending Test (Empty)", len(display_df[display_df["Status"] == "Empty"]))
             
-            # 3. Data Table
+            # 4. Critical Compliance Alerts
+            st.markdown("---")
+            st.subheader("Compliance Alerts")
+            today = datetime.now().date()
+            next_week = today + timedelta(days=7)
+            
+            alerts = display_df[(display_df["Next_Test_Due"] <= next_week) | (display_df["Overdue"] == True)]
+            
+            if not alerts.empty:
+                st.warning(f"Found {len(alerts)} cylinders requiring immediate testing/inspection.")
+                st.dataframe(alerts, use_container_width=True, hide_index=True)
+            else:
+                st.success("All cylinders in this view are currently compliant.")
+
+            # 5. Full Data View
             st.markdown("---")
             st.subheader("Inventory Details")
             st.dataframe(display_df, use_container_width=True, hide_index=True)
-            
+    
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake (New Batch)":
     st.header("Log Incoming Shipment")
@@ -146,6 +160,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
