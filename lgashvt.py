@@ -41,7 +41,7 @@ menu = ["Dashboard", "Truck Intake (New Batch)", "Bulk Processing", "Inventory S
 choice = st.sidebar.radio("Navigation", menu)
 
 # --- PAGE: DASHBOARD ---
-if choice == "Dashboard":
+    if choice == "Dashboard":
         st.header("Real-Time Fleet Intelligence")
         
         # 1. Fetch Data
@@ -101,7 +101,14 @@ if choice == "Dashboard":
             
             if not alerts.empty:
                 st.warning(f"ACTION REQUIRED: {len(alerts)} units require inspection or testing.")
-                st.dataframe(alerts, use_container
+                st.dataframe(alerts, use_container_width=True, hide_index=True)
+            else:
+                st.success("SAFETY CHECK: All cylinders in this view are currently compliant.")
+
+            # 6. INVENTORY DATA TABLE
+            st.markdown("---")
+            st.subheader("Inventory Details")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
     
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake (New Batch)":
@@ -167,6 +174,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
