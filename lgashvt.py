@@ -41,7 +41,7 @@ menu = ["Dashboard", "Truck Intake (New Batch)", "Bulk Processing", "Inventory S
 choice = st.sidebar.radio("Navigation", menu)
 
 # --- PAGE: DASHBOARD ---
-    if choice == "Dashboard":
+if choice == "Dashboard":
         st.header("Real-Time Fleet Intelligence")
         
         # 1. Load Data
@@ -160,6 +160,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
