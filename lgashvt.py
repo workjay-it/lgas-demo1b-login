@@ -101,7 +101,7 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # 3. COMPLIANCE ALERTS (Now Second)
+        # 3. COMPLIANCE ALERTS (With Scrollable Window)
         st.subheader("Compliance Alerts")
         if "Next_Test_Due" in display_df.columns:
             temp_df = display_df.copy()
@@ -112,15 +112,15 @@ if choice == "Dashboard":
             
             if not alerts.empty:
                 st.error(f"Alert: {len(alerts)} units require re-testing soon.")
-                with st.expander("View Expiring Units"):
-                    # Use .dt.date to make the table look cleaner
-                    alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
-                    alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
-                    st.table(alerts_display)
+                
+                # Format for display
+                alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
+                alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
+                
+                # Height=250 provides a concise view with a scrollbar
+                st.dataframe(alerts_display, use_container_width=True, hide_index=True, height=250)
             else:
                 st.success("All units are currently compliant.")
-        
-        st.markdown("---")
 
         # 4. TOGGLE FOR FULL LIST
         show_list = st.toggle("Show Individual Cylinder Records", value=False)
@@ -231,6 +231,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
