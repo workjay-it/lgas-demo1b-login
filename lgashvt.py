@@ -50,6 +50,7 @@ choice = st.sidebar.radio("Navigation", menu)
 df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
+# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("📊 Fleet Intelligence & Batch Analytics")
 
@@ -61,53 +62,62 @@ if choice == "Dashboard":
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        if b_df.empty: return pd.DataFrame()
+        if b_df.empty:
+            return pd.DataFrame()
 
-        # FIX: Your CSV has 'Batch_ID', Supabase has 'batch_id'
-        # We rename the column from the cylinders table to match the batches table
+        # --- THE FIX: DATA NORMALIZATION ---
+        # 1. Standardize column name (CSV uses 'Batch_ID', DB might use 'batch_id')
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
             
-        # Standardize for the merge
+        # 2. STRIP & UPPER: Remove spaces and force uppercase so 'batch001' == 'BATCH001'
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
+        
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
-
-        # MERGE: This links the two tables
+            # Ensure Status is a string to prevent grouping errors
+            c_df["Status"] = c_df["Status"].astype(str).str.strip()
+        
+        # 3. MERGE: Link the tables
         return pd.merge(b_df, c_df, on="batch_id", how="left")
 
     full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No data found. Please upload your CSVs to Supabase.")
+        st.warning("No data found.")
     else:
-        # Filter logic
+        # Filter Logic
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-        target_company = st.selectbox("Select Company", all_companies)
+        target_company = st.selectbox("Select Company to View", all_companies)
+        
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
-        # Metrics
+        # METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
-        m3.metric("Damaged Found", (display_df["Status"] == "Damaged").sum())
+        m3.metric("Damaged Found", (display_df["Status"].str.upper() == "DAMAGED").sum())
 
         st.markdown("---")
+
+        # THE SUMMARY TABLE
         st.subheader(f"Batch Performance: {target_company}")
         
-        # This summary table shows the "extra" truck info too
+        # We group by the Batch and Truck info
         summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
-            Total=("Cylinder_ID", "count"),
-            Full=("Status", lambda x: (x == "Full").sum()),
-            Damaged=("Status", lambda x: (x == "Damaged").sum())
+            Total_Units=("Cylinder_ID", "count"),
+            Ready_Full=("Status", lambda x: (x.str.upper() == "FULL").sum()),
+            Damaged=("Status", lambda x: (x.str.upper() == "DAMAGED").sum()),
+            Empty=("Status", lambda x: (x.str.upper() == "EMPTY").sum())
         ).reset_index()
+
+        # Add a status emoji for better visibility
+        summary["Progress"] = summary["Total_Units"].apply(
+            lambda x: "📦 Waiting Unload" if x == 0 else "⚙️ Processing"
+        )
         
         st.dataframe(summary, use_container_width=True, hide_index=True)
-
-        with st.expander("🔍 View All Extra Column Data"):
-            # This shows everything: PIN, Capacity, Fill %, etc.
-            st.dataframe(display_df.dropna(subset=["Cylinder_ID"]), use_container_width=True)
-    
+        
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -209,6 +219,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
