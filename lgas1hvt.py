@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client
 
 # --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="KWS | LGAS Management", layout="wide" #page_icon="🏭")
+st.set_page_config(page_title="KWS | LGAS Management", layout="wide") #page_icon="🏭")
 
 # Custom CSS: FIXED for Dark Mode (Removes White Background from Metrics)
 st.markdown("""
@@ -164,6 +164,7 @@ else:
     # --- FOOTER ---
     st.markdown("---")
     st.markdown(f"<p style='text-align: center; color: gray;'>KWS LGAS | Last Refresh: {st.session_state['last_refresh']}</p>", unsafe_allow_html=True)
+
 
 
 
