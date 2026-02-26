@@ -101,33 +101,41 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # 3. COMPLIANCE ALERTS (With Scrollable Window)
+        # 3. COMPLIANCE ALERTS (Scrollable Section)
         st.subheader("Compliance Alerts")
         if "Next_Test_Due" in display_df.columns:
             temp_df = display_df.copy()
             temp_df["Next_Test_Due"] = pd.to_datetime(temp_df["Next_Test_Due"], errors='coerce')
             
             today = datetime.now()
+            # Filter for items due within 7 days
             alerts = temp_df[temp_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
             
             if not alerts.empty:
                 st.error(f"Alert: {len(alerts)} units require re-testing soon.")
                 
-                # Format for display
                 alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
                 alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
                 
-                # Height=250 provides a concise view with a scrollbar
+                # height=250 creates the scrollable window
                 st.dataframe(alerts_display, use_container_width=True, hide_index=True, height=250)
             else:
                 st.success("All units are currently compliant.")
+        
+        st.markdown("---")
 
-        # 4. TOGGLE FOR FULL LIST
+        # 4. TOGGLE FOR INDIVIDUAL CYLINDERS (Also Scrollable)
         show_list = st.toggle("Show Individual Cylinder Records", value=False)
         if show_list:
             st.subheader("Individual Cylinder Data")
+            # Drop empty join rows
             list_df = display_df.dropna(subset=["Cylinder_ID"])
-            st.dataframe(list_df, use_container_width=True, hide_index=True)
+            
+            if not list_df.empty:
+                # height=400 gives a larger window for the main data list
+                st.dataframe(list_df, use_container_width=True, hide_index=True, height=400)
+            else:
+                st.info("No individual cylinders found for this selection.")
 
 
 # --- PAGE: BULK PROCESSING ---
@@ -231,6 +239,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
