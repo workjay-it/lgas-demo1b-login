@@ -159,23 +159,47 @@ elif choice == "Financial & Billing":
         
         st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], use_container_width=True)
 
-# --- PAGE: TRUCK INTAKE ---
+# --- PAGE: TRUCK INTAKE (Enhanced) ---
 elif choice == "Truck Intake":
     st.header("New Batch Registration")
-    with st.form("new_batch"):
-        b_id = st.text_input("Batch ID")
-        truck = st.text_input("Truck Plate")
-        driver = st.text_input("Driver")
-        if st.form_submit_button("Register"):
-            supabase.table("batches").insert({"batch_id": b_id, "truck_number": truck, "driver_name": driver}).execute()
-            st.success("Batch Created!")
-
+    st.info("Use this form to log a new truck arrival before processing cylinders.")
+    
+    with st.form("new_batch", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            b_id = st.text_input("Batch ID (e.g., BATCH011)")
+            truck = st.text_input("Truck Plate Number")
+            
+        with col2:
+            driver = st.text_input("Driver Name")
+            # Automatically defaults to current time
+            arrival_dt = st.datetime_input("Arrival Date & Time", value=datetime.now())
+        
+        submit_batch = st.form_submit_button("Register Arrival")
+        
+        if submit_batch:
+            if b_id and truck:
+                try:
+                    supabase.table("batches").insert({
+                        "batch_id": b_id, 
+                        "truck_number": truck, 
+                        "driver_name": driver,
+                        "arrival_time": str(arrival_dt) # New Field
+                    }).execute()
+                    st.success(f"✅ Batch {b_id} registered. You can now process units in 'Bulk Processing'.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.warning("Please enter at least a Batch ID and Truck Plate.")
+                
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
     sid = st.text_input("Search ID").upper()
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
