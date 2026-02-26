@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client, Client
 
 # --- 1. INITIALIZE & CONNECTION ---
-st.set_page_config(page_title="KWS Bulk Operations Portal", layout="wide")
+st.set_page_config(page_title="Gas Industrial Operations Portal", layout="wide")
 
 # Initialize Session State variables
 if "authenticated" not in st.session_state:
@@ -152,6 +152,7 @@ else:
             Developed for KWS Pvt Ltd | <b>Last Refresh:</b> {st.session_state['last_refresh']} IST
         </div>
     """, unsafe_allow_html=True)
+
 
 
 
