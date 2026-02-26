@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client
 
 # --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="KWS | Dense Logistics Portal", layout="wide")
+st.set_page_config(page_title="Domestic Gas Logistics Portal", layout="wide")
 
 st.markdown("""
     <style>
@@ -214,6 +214,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
