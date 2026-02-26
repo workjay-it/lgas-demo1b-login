@@ -251,6 +251,43 @@ elif choice == "Search Unit":
             else:
                 st.info(f"No records found containing: {query}")
 
+# --- PAGE: GAS CO UPLOAD ---
+elif choice == "Gas Co Upload":
+    st.header("📤 Upload Cylinder Manifest")
+    st.markdown("""
+        Use this section to pre-load cylinders into the system. 
+        **Note:** The `batch_id` used here must match the one entered at Truck Intake.
+    """)
+    
+    with st.expander("📥 Download Template"):
+        template = pd.DataFrame(columns=["Cylinder_ID", "batch_id", "Next_Test_Due"])
+        st.download_button("Download CSV Template", template.to_csv(index=False), "manifest_template.csv", "text/csv")
+
+    uploaded_file = st.file_uploader("Upload Company CSV Manifest", type="csv")
+    
+    if uploaded_file:
+        upload_df = pd.read_csv(uploaded_file)
+        # Basic validation: ensure necessary columns exist
+        required = {"Cylinder_ID", "batch_id"}
+        if not required.issubset(upload_df.columns):
+            st.error(f"Invalid Format. CSV must contain: {required}")
+        else:
+            st.subheader("Data Preview")
+            st.dataframe(upload_df.head(), use_container_width=True)
+            
+            if st.button("🚀 Confirm Bulk Upload to Cloud"):
+                try:
+                    # Clean data before upload
+                    upload_df["batch_id"] = upload_df["batch_id"].astype(str).str.strip().str.upper()
+                    data_to_insert = upload_df.to_dict(orient='records')
+                    
+                    supabase.table("cylinders").insert(data_to_insert).execute()
+                    
+                    st.success(f"Successfully uploaded {len(upload_df)} cylinders!")
+                    st.cache_data.clear() # Refresh global data
+                except Exception as e:
+                    st.error(f"Error during upload: {e}")
+
 
 
 
