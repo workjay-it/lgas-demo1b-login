@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client
 
 # --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="KWS | LGAS Dense Logistics", layout="wide")
+st.set_page_config(page_title="Indsutrial Gas Management System", layout="wide")
 
 st.markdown("""
     <style>
@@ -126,6 +126,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
