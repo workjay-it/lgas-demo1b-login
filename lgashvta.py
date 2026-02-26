@@ -23,7 +23,7 @@ if 'role' not in st.session_state:
 
 def login():
     with st.container():
-        st.subheader("🔑 KWS Logistics Portal Login")
+        st.subheader("Gas Logistics Portal")
         user = st.text_input("Username")
         pwd = st.text_input("Password", type="password")
         if st.button("Login"):
@@ -326,6 +326,7 @@ elif choice == "Gas Co Upload":
                     st.cache_data.clear() # Refresh global data
                 except Exception as e:
                     st.error(f"Error during upload: {e}")
+
 
 
 
