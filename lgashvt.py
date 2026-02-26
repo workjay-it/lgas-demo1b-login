@@ -54,7 +54,7 @@ if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
 
     # 1. DATA FETCHING & UNIFICATION
-    @st.cache_data(ttl=600)
+    @st.cache_data(ttl=300) # Reduced TTL for faster testing
     def get_unified_data():
         # Fetch fresh rows from Supabase
         b_res = supabase.table("batches").select("*").execute()
@@ -63,22 +63,32 @@ if choice == "Dashboard":
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        # --- THE CASE-SENSITIVITY FIX ---
-        # Force the 'batch_id' in both tables to be UPPERCASE and stripped of spaces
-        if not b_df.empty:
-            b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
+        if b_df.empty:
+            return pd.DataFrame()
+
+        # --- THE AGGRESSIVE DATA CLEANUP ---
+        # 1. Standardize column name (just in case)
+        if "Batch_ID" in c_df.columns:
+            c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
             
+        # 2. FORCE CASE MATCHING: Convert everything to UPPERCASE and remove hidden spaces
+        b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
-            # Ensure we are using the lowercase column name 'batch_id' as you confirmed
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
         
-        # LEFT JOIN: This ensures all 11 batches appear even if they have 0 cylinders
-        return pd.merge(b_df, c_df, on="batch_id", how="left")
+        # 3. MERGE: Keep all batches from the batch table
+        merged = pd.merge(b_df, c_df, on="batch_id", how="left")
+        
+        # 4. CLEAN DATES: Fix the column types for the Alert logic
+        if "Next_Test_Due" in merged.columns:
+            merged["Next_Test_Due"] = pd.to_datetime(merged["Next_Test_Due"], errors='coerce')
+            
+        return merged
 
     full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No data found. Please register a truck or upload cylinder data.")
+        st.warning("No batches found in the 'batches' table. Please go to Truck Intake.")
     else:
         # 2. TOP LEVEL FILTER
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
@@ -97,6 +107,7 @@ if choice == "Dashboard":
         # 4. BATCH PERFORMANCE OVERVIEW
         st.subheader(f"Batch Performance: {target_company}")
         
+        # Group by the batch details to ensure the table populates
         summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
             Total_Units=("Cylinder_ID", "count"),
             Ready=("Status", lambda x: (x == "Full").sum()),
@@ -112,12 +123,27 @@ if choice == "Dashboard":
 
         # 5. DETAILED DRILL-DOWN
         with st.expander("Individual Cylinder Details"):
-            detail_df = display_df[display_df["Cylinder_ID"].notna()]
-            if not detail_df.empty:
-                st.dataframe(detail_df, use_container_width=True, hide_index=True)
+            # Only show rows that actually have a cylinder ID
+            detail_view = display_df.dropna(subset=["Cylinder_ID"])
+            if not detail_view.empty:
+                st.dataframe(detail_view, use_container_width=True, hide_index=True)
             else:
-                st.info("No individual cylinders found for this selection.")
+                st.info("No cylinder records found for this selection.")
 
+        # 6. SAFETY COMPLIANCE ALERTS
+        st.markdown("---")
+        today = datetime.now()
+        # Look for cylinders expiring within the next 7 days
+        alerts = full_df[full_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
+        
+        if not alerts.empty:
+            st.error(f"Compliance Alert: {len(alerts)} units require re-testing.")
+            with st.expander("View Expired/Due Units"):
+                # Format dates for readable display in table
+                alert_table = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
+                alert_table["Next_Test_Due"] = alert_table["Next_Test_Due"].dt.date
+                st.table(alert_table)
+    
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -219,6 +245,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
