@@ -160,38 +160,53 @@ elif choice == "Financial & Billing":
         st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], use_container_width=True)
 
 # --- PAGE: TRUCK INTAKE (Enhanced) ---
+# --- PAGE: TRUCK INTAKE (With Recent Arrivals) ---
 elif choice == "Truck Intake":
     st.header("New Batch Registration")
-    st.info("Use this form to log a new truck arrival before processing cylinders.")
     
+    # 1. Registration Form
     with st.form("new_batch", clear_on_submit=True):
         col1, col2 = st.columns(2)
-        
         with col1:
             b_id = st.text_input("Batch ID (e.g., BATCH011)")
             truck = st.text_input("Truck Plate Number")
-            
         with col2:
             driver = st.text_input("Driver Name")
-            # Automatically defaults to current time
             arrival_dt = st.datetime_input("Arrival Date & Time", value=datetime.now())
         
-        submit_batch = st.form_submit_button("Register Arrival")
-        
-        if submit_batch:
+        if st.form_submit_button("Register Arrival"):
             if b_id and truck:
                 try:
                     supabase.table("batches").insert({
                         "batch_id": b_id, 
                         "truck_number": truck, 
                         "driver_name": driver,
-                        "arrival_time": str(arrival_dt) # New Field
+                        "arrival_time": str(arrival_dt)
                     }).execute()
-                    st.success(f"✅ Batch {b_id} registered. You can now process units in 'Bulk Processing'.")
+                    st.success(f"✅ Batch {b_id} successfully registered!")
+                    st.cache_data.clear() # Refresh data to show in table below
                 except Exception as e:
                     st.error(f"Error: {e}")
             else:
                 st.warning("Please enter at least a Batch ID and Truck Plate.")
+
+    st.markdown("---")
+    
+    # 2. Recent Activity Table
+    st.subheader("Last 5 Truck Arrivals")
+    try:
+        # Fetch the 5 most recent batches from Supabase
+        recent_res = supabase.table("batches").select("*").order("created_at", desc=True).limit(5).execute()
+        recent_df = pd.DataFrame(recent_res.data)
+        
+        if not recent_df.empty:
+            # Clean up the display columns
+            display_cols = ["batch_id", "truck_number", "driver_name", "arrival_time"]
+            st.table(recent_df[display_cols])
+        else:
+            st.info("No recent arrivals recorded.")
+    except Exception as e:
+        st.error("Could not load recent arrivals.")
                 
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
@@ -199,6 +214,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
