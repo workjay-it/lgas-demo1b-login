@@ -49,34 +49,59 @@ df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
-    st.header("Real-Time Fleet Intelligence")
+    st.header("Fleet Intelligence & Batch Analytics")
     
     if df.empty:
         st.warning("No data found. Please import your 10-batch CSV to Supabase.")
     else:
-        # Batch Filter
-        unique_batches = ["All Active Batches"] + sorted(df["Batch_ID"].dropna().unique().tolist())
-        selected_batch = st.selectbox("Filter by Batch/Shipment", unique_batches)
+        # 1. BATCH SUMMARY TABLE (The New Primary View)
+        st.subheader("Batch Performance Overview")
         
-        display_df = df if selected_batch == "All Active Batches" else df[df["Batch_ID"] == selected_batch]
+        # Calculate stats for every batch automatically
+        batch_summary = df.groupby("Batch_ID").agg(
+            Total_Units=("Cylinder_ID", "count"),
+            Full=("Status", lambda x: (x == "Full").sum()),
+            Damaged=("Status", lambda x: (x == "Damaged").sum()),
+            Empty_Pending=("Status", lambda x: (x == "Empty").sum())
+        ).reset_index()
+        
+        st.dataframe(batch_summary, use_container_width=True, hide_index=True)
 
-        # Metrics
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Units in View", len(display_df))
-        m2.metric("Full", len(display_df[display_df["Status"] == "Full"]))
-        m3.metric("Damaged", len(display_df[display_df["Status"] == "Damaged"]))
-        m4.metric("Empty/Pending", len(display_df[display_df["Status"] == "Empty"]))
+        st.markdown("---")
 
-        # Compliance Section
-        st.subheader("Safety Alerts")
+        # 2. DRILL-DOWN SECTION
+        st.subheader("Detailed Inspection")
+        
+        # Toggle to show/hide the big list
+        show_details = st.toggle("Show Individual Cylinder Details", value=False)
+        
+        if show_details:
+            # Dropdown to pick which batch to inspect
+            unique_batches = ["All Units"] + sorted(df["Batch_ID"].dropna().unique().tolist())
+            selected_batch = st.selectbox("Select Batch to Inspect", unique_batches)
+            
+            display_df = df if selected_batch == "All Units" else df[df["Batch_ID"] == selected_batch]
+            
+            # Show Metrics for just this selection
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Selected Units", len(display_df))
+            c2.metric("Damaged in Selection", len(display_df[display_df["Status"] == "Damaged"]))
+            c3.metric("Available Full", len(display_df[display_df["Status"] == "Full"]))
+            
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Toggle 'Show Individual Cylinder Details' above to see specific serial numbers and test dates.")
+
+        # 3. SAFETY ALERTS (Only shows if there is a crisis)
         today = datetime.now().date()
         next_week = today + timedelta(days=7)
-        alerts = display_df[display_df["Next_Test_Due"] <= next_week]
-        if not alerts.empty:
-            st.error(f"{len(alerts)} Units requiring immediate re-testing.")
-            st.dataframe(alerts, use_container_width=True, hide_index=True)
+        alerts = df[df["Next_Test_Due"] <= next_week]
         
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        if not alerts.empty:
+            st.markdown("---")
+            st.error(f"Compliance Alert: {len(alerts)} Units requiring immediate re-testing.")
+            with st.expander("View Expired/Due Units"):
+                st.dataframe(alerts[["Cylinder_ID", "Batch_ID", "Next_Test_Due", "Status"]], use_container_width=True)
 
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
@@ -151,6 +176,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
