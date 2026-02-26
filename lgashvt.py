@@ -49,7 +49,7 @@ df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
-    st.header("📊 Fleet Intelligence & Batch Analytics")
+    st.header("Fleet Intelligence & Batch Analytics")
 
     # 1. DATA FETCHING & UNIFICATION
     # Using a cache to keep the app snappy, but it's cleared by your Intake form
@@ -106,7 +106,7 @@ if choice == "Dashboard":
 
         # Visual indicator for new trucks that haven't been unloaded yet
         summary["Load_Status"] = summary["Total_Units"].apply(
-            lambda x: "📦 Waiting for Unload" if x == 0 else "⚙️ In Progress"
+            lambda x: "Waiting for Unload" if x == 0 else "In Progress"
         )
         
         st.dataframe(summary, use_container_width=True, hide_index=True)
@@ -126,7 +126,7 @@ if choice == "Dashboard":
         alerts = full_df[full_df["Next_Test_Due"] <= (today + timedelta(days=7))]
         
         if not alerts.empty:
-            st.error(f"🚨 Compliance Alert: {len(alerts)} units require re-testing.")
+            st.error(f"Compliance Alert: {len(alerts)} units require re-testing.")
             with st.expander("View Expired/Due Units"):
                 st.table(alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]])
                 
@@ -188,7 +188,7 @@ elif choice == "Financial & Billing":
 
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
-    st.header("🚚 New Truck Arrival")
+    st.header("New Truck Arrival")
     
     companies = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
     
@@ -218,7 +218,7 @@ elif choice == "Truck Intake":
                     st.cache_data.clear()
                     
                     # 2. Success message (Balloons removed)
-                    st.success(f"✅ Batch {clean_batch_id} registered successfully.")
+                    st.success(f"Batch {clean_batch_id} registered successfully.")
                     
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -231,6 +231,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
