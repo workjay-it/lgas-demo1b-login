@@ -50,12 +50,13 @@ choice = st.sidebar.radio("Navigation", menu)
 df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
-# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
-    st.header("📊 Fleet Intelligence & Batch Analytics")
+    st.header("Fleet Intelligence & Batch Analytics")
 
-    @st.cache_data(ttl=300)
+    # 1. DATA FETCHING & UNIFICATION
+    @st.cache_data(ttl=300) # Reduced TTL for faster testing
     def get_unified_data():
+        # Fetch fresh rows from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
         
@@ -65,59 +66,84 @@ if choice == "Dashboard":
         if b_df.empty:
             return pd.DataFrame()
 
-        # --- THE FIX: DATA NORMALIZATION ---
-        # 1. Standardize column name (CSV uses 'Batch_ID', DB might use 'batch_id')
+        # --- THE AGGRESSIVE DATA CLEANUP ---
+        # 1. Standardize column name (just in case)
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
             
-        # 2. STRIP & UPPER: Remove spaces and force uppercase so 'batch001' == 'BATCH001'
+        # 2. FORCE CASE MATCHING: Convert everything to UPPERCASE and remove hidden spaces
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
-        
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
-            # Ensure Status is a string to prevent grouping errors
-            c_df["Status"] = c_df["Status"].astype(str).str.strip()
         
-        # 3. MERGE: Link the tables
-        return pd.merge(b_df, c_df, on="batch_id", how="left")
+        # 3. MERGE: Keep all batches from the batch table
+        merged = pd.merge(b_df, c_df, on="batch_id", how="left")
+        
+        # 4. CLEAN DATES: Fix the column types for the Alert logic
+        if "Next_Test_Due" in merged.columns:
+            merged["Next_Test_Due"] = pd.to_datetime(merged["Next_Test_Due"], errors='coerce')
+            
+        return merged
 
     full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No data found.")
+        st.warning("No batches found in the 'batches' table. Please go to Truck Intake.")
     else:
-        # Filter Logic
+        # 2. TOP LEVEL FILTER
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
         target_company = st.selectbox("Select Company to View", all_companies)
         
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
-        # METRICS
+        # 3. HIGH-LEVEL METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
-        m3.metric("Damaged Found", (display_df["Status"].str.upper() == "DAMAGED").sum())
+        m3.metric("Damaged Found", (display_df["Status"] == "Damaged").sum())
 
         st.markdown("---")
 
-        # THE SUMMARY TABLE
+        # 4. BATCH PERFORMANCE OVERVIEW
         st.subheader(f"Batch Performance: {target_company}")
         
-        # We group by the Batch and Truck info
+        # Group by the batch details to ensure the table populates
         summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
             Total_Units=("Cylinder_ID", "count"),
-            Ready_Full=("Status", lambda x: (x.str.upper() == "FULL").sum()),
-            Damaged=("Status", lambda x: (x.str.upper() == "DAMAGED").sum()),
-            Empty=("Status", lambda x: (x.str.upper() == "EMPTY").sum())
+            Ready=("Status", lambda x: (x == "Full").sum()),
+            Damaged=("Status", lambda x: (x == "Damaged").sum()),
+            Empty=("Status", lambda x: (x == "Empty").sum())
         ).reset_index()
 
-        # Add a status emoji for better visibility
-        summary["Progress"] = summary["Total_Units"].apply(
-            lambda x: "📦 Waiting Unload" if x == 0 else "⚙️ Processing"
+        summary["Load_Status"] = summary["Total_Units"].apply(
+            lambda x: "Waiting for Unload" if x == 0 else "In Progress"
         )
         
         st.dataframe(summary, use_container_width=True, hide_index=True)
+
+        # 5. DETAILED DRILL-DOWN
+        with st.expander("Individual Cylinder Details"):
+            # Only show rows that actually have a cylinder ID
+            detail_view = display_df.dropna(subset=["Cylinder_ID"])
+            if not detail_view.empty:
+                st.dataframe(detail_view, use_container_width=True, hide_index=True)
+            else:
+                st.info("No cylinder records found for this selection.")
+
+        # 6. SAFETY COMPLIANCE ALERTS
+        st.markdown("---")
+        today = datetime.now()
+        # Look for cylinders expiring within the next 7 days
+        alerts = full_df[full_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
         
+        if not alerts.empty:
+            st.error(f"Compliance Alert: {len(alerts)} units require re-testing.")
+            with st.expander("View Expired/Due Units"):
+                # Format dates for readable display in table
+                alert_table = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
+                alert_table["Next_Test_Due"] = alert_table["Next_Test_Due"].dt.date
+                st.table(alert_table)
+    
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -219,6 +245,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
