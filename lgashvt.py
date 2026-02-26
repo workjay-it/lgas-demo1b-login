@@ -44,23 +44,32 @@ choice = st.sidebar.radio("Navigation", menu)
 if choice == "Dashboard":
         st.header("Real-Time Fleet Intelligence")
         
-        # 1. Load Data
+        # 1. Fetch Data
         df = load_cylinders()
         
         if df.empty:
             st.info("The inventory is currently empty. Please import your 10-batch CSV into Supabase.")
-            # Default empty metrics
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Units", 0)
             m2.metric("Full", 0)
             m3.metric("Damaged", 0)
             m4.metric("Empty", 0)
         else:
-            # 2. Batch Selector Logic
-            # We filter based on your Customer_Name (Security) and then by Batch
+            # 2. DATA CLEANING (Crucial to fix the TypeError)
+            # Convert columns to datetime then to date objects for comparison
+            for col in ["Next_Test_Due", "Last_Test_Date"]:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+
+            # Ensure 'Overdue' is treated as a boolean
+            if "Overdue" in df.columns:
+                df["Overdue"] = df["Overdue"].fillna(False).astype(bool)
+
+            # 3. SECURITY & BATCH FILTERING
+            # Filter by client link (if not admin)
             display_df = df if st.session_state["user_role"] == "admin" else df[df["Customer_Name"] == st.session_state["client_link"]]
             
-            # Check if Batch_ID column exists to build the dropdown
+            # Batch Selector Dropdown
             if "Batch_ID" in display_df.columns:
                 unique_batches = display_df["Batch_ID"].dropna().unique().tolist()
                 batch_options = ["All Active Batches"] + sorted([str(b) for b in unique_batches])
@@ -70,31 +79,29 @@ if choice == "Dashboard":
                 if selected_batch != "All Active Batches":
                     display_df = display_df[display_df["Batch_ID"] == selected_batch]
 
-            # 3. Dynamic Metrics (Updates based on the dropdown above)
+            # 4. DYNAMIC METRICS
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Units in View", len(display_df))
             m2.metric("Available (Full)", len(display_df[display_df["Status"] == "Full"]))
             m3.metric("Quarantine (Damaged)", len(display_df[display_df["Status"] == "Damaged"]))
             m4.metric("Pending Test (Empty)", len(display_df[display_df["Status"] == "Empty"]))
             
-            # 4. Critical Compliance Alerts
+            # 5. COMPLIANCE ALERTS (This logic is now safe from TypeErrors)
             st.markdown("---")
-            st.subheader("Compliance Alerts")
+            st.subheader("Compliance & Safety Alerts")
+            
             today = datetime.now().date()
             next_week = today + timedelta(days=7)
             
-            alerts = display_df[(display_df["Next_Test_Due"] <= next_week) | (display_df["Overdue"] == True)]
+            # Filter for cylinders due within 7 days or already overdue
+            alerts = display_df[
+                (display_df["Next_Test_Due"] <= next_week) | 
+                (display_df["Overdue"] == True)
+            ]
             
             if not alerts.empty:
-                st.warning(f"Found {len(alerts)} cylinders requiring immediate testing/inspection.")
-                st.dataframe(alerts, use_container_width=True, hide_index=True)
-            else:
-                st.success("All cylinders in this view are currently compliant.")
-
-            # 5. Full Data View
-            st.markdown("---")
-            st.subheader("Inventory Details")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+                st.warning(f"ACTION REQUIRED: {len(alerts)} units require inspection or testing.")
+                st.dataframe(alerts, use_container
     
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake (New Batch)":
@@ -160,6 +167,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
