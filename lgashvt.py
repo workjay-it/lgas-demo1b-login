@@ -16,45 +16,18 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DATABASE CONNECTION ---
+# --- 2. DATABASE CONNECTION & GLOBAL DATA ---
 @st.cache_resource
 def init_connection():
     return create_client(st.secrets["connections"]["supabase"]["url"], st.secrets["connections"]["supabase"]["key"])
 
 supabase = init_connection()
 
-@st.cache_data(ttl=60)
-def load_cylinders():
-    res = supabase.table("cylinders").select("*").execute()
-    df = pd.DataFrame(res.data)
-    if not df.empty:
-        # Standardize naming immediately upon load
-        if "Batch_ID" in df.columns:
-            df = df.rename(columns={"Batch_ID": "batch_id"})
-            
-        for col in ["Next_Test_Due", "Last_Test_Date"]:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-    return df
-
-def load_batches():
-    res = supabase.table("batches").select("*").execute()
-    return pd.DataFrame(res.data)
-
-# --- 3. NAVIGATION ---
-st.sidebar.title("KWS Logistics Hub")
-menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit"]
-choice = st.sidebar.radio("Navigation", menu)
-
-# Global Data Load
-df = load_cylinders()
-
-# --- PAGE: DASHBOARD ---
-if choice == "Dashboard":
-    st.header("Fleet Intelligence & Batch Analytics")
-
-    @st.cache_data(ttl=300)
-    def get_unified_data():
+# MASTER DATA FUNCTION: Shared by Dashboard and Search pages
+@st.cache_data(ttl=300)
+def get_unified_data():
+    try:
+        # Fetch data from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
         b_df = pd.DataFrame(b_res.data)
@@ -62,23 +35,39 @@ if choice == "Dashboard":
         
         if b_df.empty: return pd.DataFrame()
 
+        # Standardize column naming for the merge
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
         
+        # Clean IDs and standardize to uppercase
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
             
+        # Left join to keep all batches even if they have no cylinders scanned yet
         return pd.merge(b_df, c_df, on="batch_id", how="left")
+    except Exception as e:
+        st.error(f"Database sync error: {e}")
+        return pd.DataFrame()
 
-    full_df = get_unified_data()
+# Load the master data once here so it is available globally
+full_df = get_unified_data()
+
+# --- 3. NAVIGATION ---
+st.sidebar.title("KWS Logistics Hub")
+menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit"]
+choice = st.sidebar.radio("Navigation", menu)
+
+# --- PAGE: DASHBOARD ---
+if choice == "Dashboard":
+    st.header("Fleet Intelligence & Batch Analytics")
 
     if full_df.empty:
         st.warning("No data found.")
     else:
         # 1. FILTERS & METRICS
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-        target_company = st.selectbox("Select Company", all_companies)
+        target_company = st.selectbox("Select Company to view", all_companies)
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
         m1, m2, m3 = st.columns(3)
@@ -88,62 +77,43 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # 2. BATCH PERFORMANCE (Now First)
-        st.subheader("Batch Performance")
-        # dropna=False ensures batches with 0 cylinders are still listed
+        # 2. BATCH PERFORMANCE
+        st.subheader(f"Batch Performance: {target_company}")
         summary = display_df.groupby(["batch_id", "company", "truck_number"], dropna=False).agg(
-            Total=("Cylinder_ID", "count"),
-            Full=("Status", lambda x: (x.astype(str).str.upper() == "FULL").sum()),
-            Damaged=("Status", lambda x: (x.astype(str).str.upper() == "DAMAGED").sum())
+            Total_Units=("Cylinder_ID", "count"),
+            Ready=("Status", lambda x: (x.astype(str).str.upper() == "FULL").sum()),
+            Damaged=("Status", lambda x: (x.astype(str).str.upper() == "DAMAGED").sum()),
+            Empty=("Status", lambda x: (x.astype(str).str.upper() == "EMPTY").sum())
         ).reset_index()
-        
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
         st.markdown("---")
 
-     # 3. COMPLIANCE ALERTS (Concise Scrollable View)
+        # 3. COMPLIANCE ALERTS
         st.subheader("Compliance Alerts")
         if "Next_Test_Due" in display_df.columns:
             temp_df = display_df.copy()
             temp_df["Next_Test_Due"] = pd.to_datetime(temp_df["Next_Test_Due"], errors='coerce')
-            
             today = datetime.now()
             alerts = temp_df[temp_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
             
             if not alerts.empty:
                 st.error(f"Alert: {len(alerts)} units require re-testing soon.")
-                
                 alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
                 alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
-                
-                # Height set to 300 for a smoother "window" feel
-                st.dataframe(
-                    alerts_display, 
-                    use_container_width=True, 
-                    hide_index=True, 
-                    height=300
-                )
+                st.dataframe(alerts_display, use_container_width=True, hide_index=True, height=250)
             else:
                 st.success("All units are currently compliant.")
         
         st.markdown("---")
 
-        # 4. INDIVIDUAL DATA (Concise Scrollable View)
+        # 4. INDIVIDUAL DATA
         show_list = st.toggle("Show Individual Cylinder Records", value=False)
         if show_list:
             st.subheader("Individual Cylinder Data")
             list_df = display_df.dropna(subset=["Cylinder_ID"])
-            
             if not list_df.empty:
-                # Larger height for the main data list to reduce "scrolling fatigue"
-                st.dataframe(
-                    list_df, 
-                    use_container_width=True, 
-                    hide_index=True, 
-                    height=500
-                )
-            else:
-                st.info("No individual cylinders found for this selection.")
+                st.dataframe(list_df, use_container_width=True, hide_index=True, height=500)
 
 
 # --- PAGE: BULK PROCESSING ---
@@ -242,49 +212,34 @@ elif choice == "Truck Intake":
 elif choice == "Search Unit":
     st.header("Search Inventory")
     
-    # 1. SEARCH CATEGORY SELECTION
     col1, col2 = st.columns([1, 3])
     with col1:
-        search_type = st.selectbox(
-            "Search By", 
-            ["Cylinder ID", "Batch ID", "Truck Plate"]
-        )
+        search_type = st.selectbox("Search By", ["Cylinder ID", "Batch ID", "Truck Plate"])
     with col2:
         query = st.text_input(f"Enter {search_type}").strip().upper()
 
     if query:
-        # Get the latest data for searching
-        search_df = get_unified_data()
-        
-        if search_df.empty:
-            st.warning("No data available to search.")
+        if full_df.empty:
+            st.warning("No data available.")
         else:
-            # 2. SEARCH LOGIC
+            # Flexible searching using .str.contains()
             if search_type == "Cylinder ID":
-                results = search_df[search_df["Cylinder_ID"].astype(str).str.upper() == query]
-            
+                results = full_df[full_df["Cylinder_ID"].astype(str).str.upper().str.contains(query, na=False)]
             elif search_type == "Batch ID":
-                results = search_df[search_df["batch_id"].astype(str).str.upper() == query]
-            
+                results = full_df[full_df["batch_id"].astype(str).str.upper().str.contains(query, na=False)]
             elif search_type == "Truck Plate":
-                results = search_df[search_df["truck_number"].astype(str).str.upper() == query]
+                results = full_df[full_df["truck_number"].astype(str).str.upper().str.contains(query, na=False)]
 
-            # 3. DISPLAY RESULTS
             if not results.empty:
-                st.success(f"Found {len(results)} record(s) matching '{query}'")
+                st.success(f"Found {len(results)} matching record(s).")
                 
-                # If it's a Batch or Truck search, show a summary first
                 if search_type != "Cylinder ID":
-                    st.subheader("Summary")
-                    st.write(f"Company: {results['company'].iloc[0]}")
-                    st.write(f"Driver: {results['driver_name'].iloc[0]}")
+                    first = results.iloc[0]
+                    st.info(f"Company: {first.get('company', 'N/A')} | Driver: {first.get('driver_name', 'N/A')}")
                 
-                st.markdown("---")
-                st.subheader("Detailed Records")
-                # Using a scrollable dataframe for search results to keep it concise
                 st.dataframe(results, use_container_width=True, hide_index=True, height=400)
             else:
-                st.info(f"No records found for {search_type}: {query}")
+                st.info(f"No records found containing: {query}")
 
 
 
