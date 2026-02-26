@@ -133,76 +133,42 @@ elif choice == "Truck Intake (New Batch)":
                 st.success(f"Truckload {b_id} registered. You can now link cylinders to this ID.")
             else: st.error("Batch ID is required.")
 
-# --- PAGE: BULK PROCESSING (Live Checklist Mode) ---
-# --- PAGE: BULK PROCESSING (Financial Triage Mode) ---
+# --- PAGE: BULK PROCESSING (Worker View) ---
 elif choice == "Bulk Processing":
-    st.header("Production Line Triage & Costing")
-    
-    # Define your Rate Card here
-    RATE_CARD = {
-        "Good / No Repair": 0,
-        "Valve Leak (Minor)": 150,
-        "Valve Replacement": 450,
-        "Body Dent Repair": 300,
-        "Re-painting Required": 200,
-        "Foot Ring Straightening": 250,
-        "Condemned (Scrap)": 0
-    }
-
+    st.header("Production Line Triage")
     batches_df = load_batches()
     
     if batches_df.empty:
         st.warning("No active batches found.")
     else:
         selected_b = st.selectbox("Select Batch to Process", batches_df["batch_id"].tolist())
-        
         all_cyls = load_cylinders()
         batch_cyls = all_cyls[all_cyls["Batch_ID"] == selected_b].copy()
         
         if not batch_cyls.empty:
-            st.subheader(f"Unit Checklist & Repair Billing: {selected_b}")
-
-            # 3. Enhanced Data Editor with Cost Mapping
+            st.subheader(f"Technical Checklist: {selected_b}")
+            
             edited_df = st.data_editor(
                 batch_cyls[["Cylinder_ID", "Status", "Condition_Notes"]],
                 column_config={
-                    "Status": st.column_config.SelectboxColumn(
-                        "Test Result",
-                        options=["Full", "Damaged", "Under Maintenance"],
-                        required=True,
-                    ),
-                    "Condition_Notes": st.column_config.SelectboxColumn(
-                        "Repair Type / Damage",
-                        options=list(RATE_CARD.keys()),
-                        required=True,
-                    ),
+                    "Status": st.column_config.SelectboxColumn("Result", options=["Full", "Damaged", "Under Maintenance"]),
+                    "Condition_Notes": st.column_config.SelectboxColumn("Damage Type", options=[
+                        "Good / No Repair", "Valve Leak (Minor)", "Valve Replacement", 
+                        "Body Dent Repair", "Re-painting Required", "Foot Ring Straightening", "Condemned"
+                    ]),
                     "Cylinder_ID": st.column_config.TextColumn("Cylinder ID", disabled=True),
                 },
-                hide_index=True,
-                use_container_width=True,
-                key="batch_editor_financial"
+                hide_index=True, use_container_width=True, key="worker_triage"
             )
 
-            # 4. Real-time Financial Summary
-            # We map the repair names in the table to the prices in our Rate Card
-            total_repair_cost = edited_df["Condition_Notes"].map(RATE_CARD).sum()
-            
-            st.markdown(f"""
-            ### Batch Financial Summary
-            * **Total Units in Batch:** {len(edited_df)}
-            * **Damaged Units Detected:** {len(edited_df[edited_df['Status'] == 'Damaged'])}
-            * **Estimated Repair Billing:** ₹ {total_repair_cost:,.2f}
-            """)
-
-            if st.button("Save Changes & Finalize Billing"):
+            if st.button("Submit Production Data"):
                 for index, row in edited_df.iterrows():
                     supabase.table("cylinders").update({
                         "Status": row["Status"],
                         "Condition_Notes": row["Condition_Notes"],
                         "Last_Test_Date": str(datetime.now().date())
                     }).eq("Cylinder_ID", row["Cylinder_ID"]).execute()
-                
-                st.success(f"Database updated. Batch {selected_b} billing total: ₹{total_repair_cost}")
+                st.success(f"Production data for {selected_b} synced to cloud.")
                 st.cache_data.clear()
                     
 # --- PAGE: SEARCH ---
@@ -223,6 +189,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
