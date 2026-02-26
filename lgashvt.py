@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client
 
 # --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="Indsutrial Gas Management System", layout="wide")
+st.set_page_config(page_title="KWS | Dense Logistics Portal", layout="wide")
 
 st.markdown("""
     <style>
@@ -17,137 +17,81 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Connection
+# --- 2. DATABASE CONNECTION ---
 @st.cache_resource
 def init_connection():
     return create_client(st.secrets["connections"]["supabase"]["url"], st.secrets["connections"]["supabase"]["key"])
 
 supabase = init_connection()
 
-# Data Loaders
+@st.cache_data(ttl=60)
 def load_cylinders():
     res = supabase.table("cylinders").select("*").execute()
-    return pd.DataFrame(res.data)
+    df = pd.DataFrame(res.data)
+    if not df.empty:
+        # Crucial: Fix the Date types to avoid TypeErrors
+        for col in ["Next_Test_Due", "Last_Test_Date"]:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
+    return df
 
 def load_batches():
     res = supabase.table("batches").select("*").execute()
     return pd.DataFrame(res.data)
 
-# --- 3. MAIN INTERFACE ---
-if "authenticated" not in st.session_state: st.session_state["authenticated"] = True # Simplified for setup
-
-st.sidebar.markdown("### KWS Dense Logistics")
-menu = ["Dashboard", "Truck Intake (New Batch)", "Bulk Processing", "Inventory Search"]
+# --- 3. NAVIGATION ---
+st.sidebar.title("KWS Logistics Hub")
+menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit"]
 choice = st.sidebar.radio("Navigation", menu)
+
+# Global Data Load
+df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
-        st.header("Real-Time Fleet Intelligence")
-        
-        # 1. Fetch Data
-        df = load_cylinders()
-        
-        if df.empty:
-            st.info("The inventory is currently empty. Please import your 10-batch CSV into Supabase.")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Units", 0)
-            m2.metric("Full", 0)
-            m3.metric("Damaged", 0)
-            m4.metric("Empty", 0)
-        else:
-            # 2. DATA CLEANING (Crucial to fix the TypeError)
-            # Convert columns to datetime then to date objects for comparison
-            for col in ["Next_Test_Due", "Last_Test_Date"]:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.date
-
-            # Ensure 'Overdue' is treated as a boolean
-            if "Overdue" in df.columns:
-                df["Overdue"] = df["Overdue"].fillna(False).astype(bool)
-
-            # 3. SECURITY & BATCH FILTERING
-            # Filter by client link (if not admin)
-            display_df = df if st.session_state["user_role"] == "admin" else df[df["Customer_Name"] == st.session_state["client_link"]]
-            
-            # Batch Selector Dropdown
-            if "Batch_ID" in display_df.columns:
-                unique_batches = display_df["Batch_ID"].dropna().unique().tolist()
-                batch_options = ["All Active Batches"] + sorted([str(b) for b in unique_batches])
-                
-                selected_batch = st.selectbox("Filter Dashboard by Shipment/Batch", batch_options)
-                
-                if selected_batch != "All Active Batches":
-                    display_df = display_df[display_df["Batch_ID"] == selected_batch]
-
-            # 4. DYNAMIC METRICS
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Units in View", len(display_df))
-            m2.metric("Available (Full)", len(display_df[display_df["Status"] == "Full"]))
-            m3.metric("Quarantine (Damaged)", len(display_df[display_df["Status"] == "Damaged"]))
-            m4.metric("Pending Test (Empty)", len(display_df[display_df["Status"] == "Empty"]))
-            
-            # 5. COMPLIANCE ALERTS (This logic is now safe from TypeErrors)
-            st.markdown("---")
-            st.subheader("Compliance & Safety Alerts")
-            
-            today = datetime.now().date()
-            next_week = today + timedelta(days=7)
-            
-            # Filter for cylinders due within 7 days or already overdue
-            alerts = display_df[
-                (display_df["Next_Test_Due"] <= next_week) | 
-                (display_df["Overdue"] == True)
-            ]
-            
-            if not alerts.empty:
-                st.warning(f"ACTION REQUIRED: {len(alerts)} units require inspection or testing.")
-                st.dataframe(alerts, use_container_width=True, hide_index=True)
-            else:
-                st.success("SAFETY CHECK: All cylinders in this view are currently compliant.")
-
-            # 6. INVENTORY DATA TABLE
-            st.markdown("---")
-            st.subheader("Inventory Details")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.header("Real-Time Fleet Intelligence")
     
-# --- PAGE: TRUCK INTAKE ---
-elif choice == "Truck Intake (New Batch)":
-    st.header("Log Incoming Shipment")
-    with st.form("truck_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            b_id = st.text_input("New Batch ID (Unique)", placeholder="e.g., TRK-101")
-            truck = st.text_input("Truck Plate Number")
-        with col2:
-            driver = st.text_input("Driver Name")
-            company = st.text_input("Originating Gas Company")
+    if df.empty:
+        st.warning("No data found. Please import your 10-batch CSV to Supabase.")
+    else:
+        # Batch Filter
+        unique_batches = ["All Active Batches"] + sorted(df["Batch_ID"].dropna().unique().tolist())
+        selected_batch = st.selectbox("Filter by Batch/Shipment", unique_batches)
         
-        notes = st.text_area("Delivery Notes")
-        
-        if st.form_submit_button("Register Truck Arrival"):
-            if b_id:
-                supabase.table("batches").insert({
-                    "batch_id": b_id, "truck_number": truck, 
-                    "driver_name": driver, "origin_company": company, "delivery_notes": notes
-                }).execute()
-                st.success(f"Truckload {b_id} registered. You can now link cylinders to this ID.")
-            else: st.error("Batch ID is required.")
+        display_df = df if selected_batch == "All Active Batches" else df[df["Batch_ID"] == selected_batch]
 
-# --- PAGE: BULK PROCESSING (Worker View) ---
-elif choice == "Bulk Processing":
+        # Metrics
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Units in View", len(display_df))
+        m2.metric("Full", len(display_df[display_df["Status"] == "Full"]))
+        m3.metric("Damaged", len(display_df[display_df["Status"] == "Damaged"]))
+        m4.metric("Empty/Pending", len(display_df[display_df["Status"] == "Empty"]))
+
+        # Compliance Section
+        st.subheader("Safety Alerts")
+        today = datetime.now().date()
+        next_week = today + timedelta(days=7)
+        alerts = display_df[display_df["Next_Test_Due"] <= next_week]
+        if not alerts.empty:
+            st.error(f"{len(alerts)} Units requiring immediate re-testing.")
+            st.dataframe(alerts, use_container_width=True, hide_index=True)
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+# --- PAGE: BULK PROCESSING ---
+elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
     batches_df = load_batches()
     
     if batches_df.empty:
-        st.warning("No active batches found.")
+        st.warning("Register a Batch in 'Truck Intake' first.")
     else:
-        selected_b = st.selectbox("Select Batch to Process", batches_df["batch_id"].tolist())
-        all_cyls = load_cylinders()
-        batch_cyls = all_cyls[all_cyls["Batch_ID"] == selected_b].copy()
+        selected_b = st.selectbox("Select Batch to Work On", batches_df["batch_id"].tolist())
+        batch_cyls = df[df["Batch_ID"] == selected_b].copy()
         
-        if not batch_cyls.empty:
-            st.subheader(f"Technical Checklist: {selected_b}")
-            
+        if batch_cyls.empty:
+            st.info("No cylinders linked to this batch yet.")
+        else:
             edited_df = st.data_editor(
                 batch_cyls[["Cylinder_ID", "Status", "Condition_Notes"]],
                 column_config={
@@ -158,38 +102,56 @@ elif choice == "Bulk Processing":
                     ]),
                     "Cylinder_ID": st.column_config.TextColumn("Cylinder ID", disabled=True),
                 },
-                hide_index=True, use_container_width=True, key="worker_triage"
+                hide_index=True, use_container_width=True, key="worker_editor"
             )
 
             if st.button("Submit Production Data"):
-                for index, row in edited_df.iterrows():
+                for _, row in edited_df.iterrows():
                     supabase.table("cylinders").update({
                         "Status": row["Status"],
                         "Condition_Notes": row["Condition_Notes"],
                         "Last_Test_Date": str(datetime.now().date())
                     }).eq("Cylinder_ID", row["Cylinder_ID"]).execute()
-                st.success(f"Production data for {selected_b} synced to cloud.")
+                st.success("Cloud Updated Successfully!")
                 st.cache_data.clear()
 
-           
+# --- PAGE: FINANCIAL & BILLING ---
+elif choice == "Financial & Billing":
+    st.header("Batch Billing & Cost Analysis")
+    RATE_CARD = {
+        "Good / No Repair": 0, "Valve Leak (Minor)": 150, "Valve Replacement": 450,
+        "Body Dent Repair": 300, "Re-painting Required": 200, "Foot Ring Straightening": 250, "Condemned": 0
+    }
+    
+    if not df.empty:
+        target_b = st.selectbox("Select Batch for Billing", df["Batch_ID"].unique())
+        batch_data = df[df["Batch_ID"] == target_b].copy()
+        batch_data["Cost"] = batch_data["Condition_Notes"].map(RATE_CARD).fillna(0)
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Batch Total Units", len(batch_data))
+        c2.metric("Total Repair Bill", f"₹{batch_data['Cost'].sum():,.2f}")
+        
+        st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], use_container_width=True)
+
+# --- PAGE: TRUCK INTAKE ---
+elif choice == "Truck Intake":
+    st.header("New Batch Registration")
+    with st.form("new_batch"):
+        b_id = st.text_input("Batch ID")
+        truck = st.text_input("Truck Plate")
+        driver = st.text_input("Driver")
+        if st.form_submit_button("Register"):
+            supabase.table("batches").insert({"batch_id": b_id, "truck_number": truck, "driver_name": driver}).execute()
+            st.success("Batch Created!")
+
 # --- PAGE: SEARCH ---
-elif choice == "Inventory Search":
-    st.header("Unit Traceability")
-    sid = st.text_input("Scan any Cylinder ID").strip().upper()
+elif choice == "Search Unit":
+    sid = st.text_input("Search ID").upper()
     if sid:
-        df = load_cylinders()
         res = df[df["Cylinder_ID"] == sid]
-        if not res.empty:
-            st.write("### Cylinder History")
-            st.table(res.T)
-            
-            # Show Parent Batch Info
-            batch_id = res.iloc[0]["Batch_ID"]
-            b_info = load_batches()
-            parent = b_info[b_info["batch_id"] == batch_id]
-            if not parent.empty:
-                st.write("### Transport Source")
-                st.dataframe(parent, hide_index=True)
+        st.table(res)
+
 
 
 
