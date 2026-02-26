@@ -55,41 +55,52 @@ if choice == "Dashboard":
 
     @st.cache_data(ttl=300)
     def get_unified_data():
+        # Fetch data from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        if b_df.empty: return pd.DataFrame()
+        if b_df.empty: 
+            return pd.DataFrame()
 
-        # Standardize column names for merging
+        # 1. Standardize column names (CSV often uses 'Batch_ID')
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
         
-        b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().upper()
+        # 2. FIX: Added .str before .upper() to prevent AttributeError
+        b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
+        
         if not c_df.empty:
-            c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().upper()
+            c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
+            # Ensure Status is clean for comparison
+            c_df["Status"] = c_df["Status"].astype(str).str.strip()
             
+        # 3. Join tables (Keep all batches even if they have no cylinders yet)
         return pd.merge(b_df, c_df, on="batch_id", how="left")
 
     full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No data found.")
+        st.warning("No data found in Supabase. Please register a truck or upload cylinders.")
     else:
         # 1. TOP FILTERS
         col_a, col_b = st.columns([2, 1])
         with col_a:
-            all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-            target_company = st.selectbox("Select Company", all_companies)
+            # Get unique companies, filtering out empty values
+            all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c and str(c).strip()])
+            target_company = st.selectbox("🏢 Select Company", all_companies)
         
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
         # 2. METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
+        # .count() avoids counting empty rows from the left join
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
-        m3.metric("Damaged Found", (display_df["Status"].str.upper() == "DAMAGED").sum())
+        # Case-insensitive check for Damaged status
+        damaged_count = (display_df["Status"].str.upper() == "DAMAGED").sum()
+        m3.metric("Damaged Found", damaged_count)
 
         st.markdown("---")
 
@@ -98,15 +109,16 @@ if choice == "Dashboard":
         damaged_df = display_df[display_df["Status"].str.upper() == "DAMAGED"]
         
         if not damaged_df.empty:
-            # Grouping to show which batches have the most damage
+            # Summary table of damage
             damaged_summary = damaged_df.groupby(["batch_id", "company"]).agg(
                 Damaged_Count=("Cylinder_ID", "count")
             ).reset_index().sort_values("Damaged_Count", ascending=False)
             
             st.dataframe(damaged_summary, use_container_width=True, hide_index=True)
             
-            with st.expander("View Specific Damaged Cylinder IDs"):
-                st.table(damaged_df[["Cylinder_ID", "batch_id", "Condition_Notes", "company"]])
+            with st.expander("🔍 View Specific Damaged Cylinder IDs"):
+                # Table of specific IDs for the floor workers
+                st.table(damaged_df[["Cylinder_ID", "batch_id", "company", "Condition_Notes"]])
         else:
             st.success("No damaged units found in the selected batches.")
 
@@ -117,15 +129,23 @@ if choice == "Dashboard":
         
         if show_all:
             st.subheader("Complete Cylinder Inventory")
-            # Cleaning up the view for the user
+            # Drop the empty join rows to only show actual cylinders
             clean_view = display_df.dropna(subset=["Cylinder_ID"]).copy()
             if not clean_view.empty:
                 st.dataframe(clean_view, use_container_width=True, hide_index=True)
             else:
                 st.info("No cylinders found for this selection.")
         else:
-            st.info("Toggle 'Show Full Inventory Data' above to see all cylinder details.")
-        
+            # Show a high-level summary of all batches instead
+            st.subheader("Batch Overview")
+            batch_summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
+                Total=("Cylinder_ID", "count"),
+                Full=("Status", lambda x: (x.str.upper() == "FULL").sum()),
+                Empty=("Status", lambda x: (x.str.upper() == "EMPTY").sum())
+            ).reset_index()
+            st.dataframe(batch_summary, use_container_width=True, hide_index=True)
+            st.info("Toggle 'Show Full Inventory Data' above to see individual cylinder IDs.")
+            
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -227,6 +247,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
