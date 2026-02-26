@@ -51,19 +51,28 @@ df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
-    st.header("📊 Fleet Intelligence & Batch Analytics")
+    st.header("Fleet Intelligence & Batch Analytics")
 
+    # 1. DATA FETCHING & UNIFICATION
     @st.cache_data(ttl=600)
     def get_unified_data():
+        # Fetch fresh rows from Supabase
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
+        
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        # Standardize column naming for the merge
-        if "Batch_ID" in c_df.columns:
-            c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
+        # --- THE CASE-SENSITIVITY FIX ---
+        # Force the 'batch_id' in both tables to be UPPERCASE and stripped of spaces
+        if not b_df.empty:
+            b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
+            
+        if not c_df.empty:
+            # Ensure we are using the lowercase column name 'batch_id' as you confirmed
+            c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
         
+        # LEFT JOIN: This ensures all 11 batches appear even if they have 0 cylinders
         return pd.merge(b_df, c_df, on="batch_id", how="left")
 
     full_df = get_unified_data()
@@ -71,16 +80,21 @@ if choice == "Dashboard":
     if full_df.empty:
         st.warning("No data found. Please register a truck or upload cylinder data.")
     else:
+        # 2. TOP LEVEL FILTER
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
         target_company = st.selectbox("Select Company to View", all_companies)
+        
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
+        # 3. HIGH-LEVEL METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
         m3.metric("Damaged Found", (display_df["Status"] == "Damaged").sum())
 
         st.markdown("---")
+
+        # 4. BATCH PERFORMANCE OVERVIEW
         st.subheader(f"Batch Performance: {target_company}")
         
         summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
@@ -90,29 +104,23 @@ if choice == "Dashboard":
             Empty=("Status", lambda x: (x == "Empty").sum())
         ).reset_index()
 
-        summary["Load_Status"] = summary["Total_Units"].apply(lambda x: "📦 Waiting for Unload" if x == 0 else "⚙️ In Progress")
+        summary["Load_Status"] = summary["Total_Units"].apply(
+            lambda x: "Waiting for Unload" if x == 0 else "In Progress"
+        )
+        
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
-        with st.expander("🔍 Drill Down: Individual Cylinder Details"):
+        # 5. DETAILED DRILL-DOWN
+        with st.expander("Individual Cylinder Details"):
             detail_df = display_df[display_df["Cylinder_ID"].notna()]
             if not detail_df.empty:
                 st.dataframe(detail_df, use_container_width=True, hide_index=True)
             else:
-                st.info("No individual cylinders registered for this selection yet.")
-
-        st.markdown("---")
-        full_df["Next_Test_Due"] = pd.to_datetime(full_df["Next_Test_Due"], errors='coerce')
-        today = datetime.now()
-        alerts = full_df[full_df["Next_Test_Due"] <= (today + timedelta(days=7))]
-        
-        if not alerts.empty:
-            st.error(f"🚨 Compliance Alert: {len(alerts)} units require re-testing.")
-            with st.expander("View Expired/Due Units"):
-                st.table(alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].dropna(subset=["Cylinder_ID"]))
+                st.info("No individual cylinders found for this selection.")
 
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
-    st.header("⚙️ Production Line Triage")
+    st.header("Production Line Triage")
     batches_df = load_batches()
     
     if batches_df.empty:
@@ -151,7 +159,7 @@ elif choice == "Bulk Processing (Workers)":
 
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
-    st.header("💰 Batch Billing & Cost Analysis")
+    st.header("Batch Billing & Cost Analysis")
     RATE_CARD = {
         "Good / No Repair": 0, "Valve Leak (Minor)": 150, "Valve Replacement": 450,
         "Body Dent Repair": 300, "Re-painting Required": 200, "Foot Ring Straightening": 250, "Condemned": 0
@@ -171,7 +179,7 @@ elif choice == "Financial & Billing":
 
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
-    st.header("🚚 New Truck Arrival")
+    st.header("New Truck Arrival")
     companies = ["Indane", "Bharat Gas", "HP Gas", "Industrial Solutions", "LPG Hub Hyderabad"]
     
     with st.form("truck_entry", clear_on_submit=True):
@@ -195,7 +203,7 @@ elif choice == "Truck Intake":
                         "arrival_time": str(datetime.now())
                     }).execute()
                     st.cache_data.clear()
-                    st.success(f"✅ Batch {clean_batch_id} registered successfully.")
+                    st.success(f"Batch {clean_batch_id} registered successfully.")
                 except Exception as e:
                     st.error(f"Error: {e}")
             else:
@@ -211,6 +219,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
