@@ -50,11 +50,10 @@ choice = st.sidebar.radio("Navigation", menu)
 df = load_cylinders()
 
 # --- PAGE: DASHBOARD ---
-# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("📊 Fleet Intelligence & Batch Analytics")
 
-    @st.cache_data(ttl=300)
+    @st.cache_data(ttl=600)
     def get_unified_data():
         b_res = supabase.table("batches").select("*").execute()
         c_res = supabase.table("cylinders").select("*").execute()
@@ -62,34 +61,30 @@ if choice == "Dashboard":
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
         
-        if b_df.empty:
-            return pd.DataFrame()
+        if b_df.empty: return pd.DataFrame()
 
-        # --- THE FIX: DATA NORMALIZATION ---
-        # 1. Standardize column name (CSV uses 'Batch_ID', DB might use 'batch_id')
+        # 1. STANDARDIZE COLUMN NAMES
+        # Your cylinders.csv has 'Batch_ID', but Supabase table has 'batch_id'
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
-            
-        # 2. STRIP & UPPER: Remove spaces and force uppercase so 'batch001' == 'BATCH001'
-        b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         
+        # 2. CLEAN DATA (Critical for matching)
+        b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
-            # Ensure Status is a string to prevent grouping errors
             c_df["Status"] = c_df["Status"].astype(str).str.strip()
-        
-        # 3. MERGE: Link the tables
+
+        # 3. MERGE
         return pd.merge(b_df, c_df, on="batch_id", how="left")
 
     full_df = get_unified_data()
 
     if full_df.empty:
-        st.warning("No data found.")
+        st.warning("No data found in Supabase.")
     else:
-        # Filter Logic
+        # TOP FILTER
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
         target_company = st.selectbox("Select Company to View", all_companies)
-        
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
         # METRICS
@@ -100,23 +95,27 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # THE SUMMARY TABLE
+        # THE FIX: REBUILDING THE SUMMARY TABLE
         st.subheader(f"Batch Performance: {target_company}")
         
-        # We group by the Batch and Truck info
-        summary = display_df.groupby(["batch_id", "company", "truck_number"]).agg(
-            Total_Units=("Cylinder_ID", "count"),
-            Ready_Full=("Status", lambda x: (x.str.upper() == "FULL").sum()),
-            Damaged=("Status", lambda x: (x.str.upper() == "DAMAGED").sum()),
-            Empty=("Status", lambda x: (x.str.upper() == "EMPTY").sum())
+        # We must include 'company' and 'truck_number' in the merge/group
+        # if those columns are empty in your batches table, the table will show blanks
+        summary = display_df.groupby(["batch_id", "company", "truck_number"], dropna=False).agg(
+            Cylinders=("Cylinder_ID", "count"),
+            Ready=("Status", lambda x: (x.str.upper() == "FULL").sum()),
+            Damaged=("Status", lambda x: (x.str.upper() == "DAMAGED").sum())
         ).reset_index()
 
-        # Add a status emoji for better visibility
-        summary["Progress"] = summary["Total_Units"].apply(
-            lambda x: "📦 Waiting Unload" if x == 0 else "⚙️ Processing"
+        # Rename for display and handle empty batches
+        summary["Load_Status"] = summary["Cylinders"].apply(
+            lambda x: "📦 Empty / Not Unloaded" if x == 0 else "⚙️ Processing"
         )
         
         st.dataframe(summary, use_container_width=True, hide_index=True)
+
+        with st.expander("🔍 View Raw Data (Debug Mode)"):
+            st.write("This shows you exactly what the app is seeing from Supabase:")
+            st.dataframe(display_df.head(20))
         
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
@@ -219,6 +218,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
