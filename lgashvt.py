@@ -65,7 +65,6 @@ if choice == "Dashboard":
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
         
-        # Clean IDs to ensure the join works
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
@@ -77,12 +76,11 @@ if choice == "Dashboard":
     if full_df.empty:
         st.warning("No data found.")
     else:
-        # 1. TOP FILTERS
+        # 1. FILTERS & METRICS
         all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
         target_company = st.selectbox("Select Company", all_companies)
         display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
 
-        # 2. METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
@@ -90,29 +88,9 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # 3. COMPLIANCE ALERTS (Safely handled)
-        st.subheader("Compliance Alerts")
-        if "Next_Test_Due" in display_df.columns:
-            # Convert to date safely, ignoring errors and NAs
-            temp_df = display_df.copy()
-            temp_df["Next_Test_Due"] = pd.to_datetime(temp_df["Next_Test_Due"], errors='coerce')
-            
-            # Find units due within 7 days
-            today = datetime.now()
-            alerts = temp_df[temp_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
-            
-            if not alerts.empty:
-                st.error(f"Alert: {len(alerts)} units require re-testing soon.")
-                with st.expander("View Expiring Units"):
-                    st.table(alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]])
-            else:
-                st.success("All units are currently compliant.")
-        
-        st.markdown("---")
-
-        # 4. BATCH PERFORMANCE (The section that was "disappearing")
+        # 2. BATCH PERFORMANCE (Now First)
         st.subheader("Batch Performance")
-        # Use dropna=False so batches with 0 cylinders don't vanish
+        # dropna=False ensures batches with 0 cylinders are still listed
         summary = display_df.groupby(["batch_id", "company", "truck_number"], dropna=False).agg(
             Total=("Cylinder_ID", "count"),
             Full=("Status", lambda x: (x.astype(str).str.upper() == "FULL").sum()),
@@ -123,14 +101,35 @@ if choice == "Dashboard":
 
         st.markdown("---")
 
-        # 5. CYLINDER LIST TOGGLE
+        # 3. COMPLIANCE ALERTS (Now Second)
+        st.subheader("Compliance Alerts")
+        if "Next_Test_Due" in display_df.columns:
+            temp_df = display_df.copy()
+            temp_df["Next_Test_Due"] = pd.to_datetime(temp_df["Next_Test_Due"], errors='coerce')
+            
+            today = datetime.now()
+            alerts = temp_df[temp_df["Next_Test_Due"] <= (today + timedelta(days=7))].dropna(subset=["Cylinder_ID"])
+            
+            if not alerts.empty:
+                st.error(f"Alert: {len(alerts)} units require re-testing soon.")
+                with st.expander("View Expiring Units"):
+                    # Use .dt.date to make the table look cleaner
+                    alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
+                    alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
+                    st.table(alerts_display)
+            else:
+                st.success("All units are currently compliant.")
+        
+        st.markdown("---")
+
+        # 4. TOGGLE FOR FULL LIST
         show_list = st.toggle("Show Individual Cylinder Records", value=False)
         if show_list:
             st.subheader("Individual Cylinder Data")
-            # Only show rows that are actual cylinders (not just empty trucks)
             list_df = display_df.dropna(subset=["Cylinder_ID"])
             st.dataframe(list_df, use_container_width=True, hide_index=True)
-    
+
+
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
@@ -232,6 +231,7 @@ elif choice == "Search Unit":
             st.table(res)
         else:
             st.info("No cylinder found with that ID.")
+
 
 
 
