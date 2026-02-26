@@ -41,27 +41,47 @@ menu = ["Dashboard", "Truck Intake (New Batch)", "Bulk Processing", "Inventory S
 choice = st.sidebar.radio("Navigation", menu)
 
 # --- PAGE: DASHBOARD ---
-if choice == "Dashboard":
-    st.header("Real-Time Fleet Intelligence")
-    df = load_cylinders()
-    
-    # High-level Metrics
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Units", len(df))
-    m2.metric("Available (Full)", len(df[df["Status"] == "Full"]))
-    m3.metric("Quarantine (Damaged)", len(df[df["Status"] == "Damaged"]))
-    m4.metric("Pending Test", len(df[df["Status"] == "Empty"]))
+    if choice == "Dashboard":
+        st.header("Real-Time Fleet Intelligence")
+        df = load_cylinders()
+        
+        if df.empty:
+            st.info("The inventory is currently empty. Please import your CSV into the 'cylinders' table in Supabase to see the Batch filters.")
+            
+            # Show empty metrics
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Units", 0)
+            m2.metric("Available", 0)
+            m3.metric("Damaged", 0)
+            m4.metric("Pending", 0)
+        else:
+            # 1. Batch Selector Filter
+            # Check if Batch_ID exists and has data
+            if "Batch_ID" in df.columns:
+                # Clean out None values for the dropdown
+                batch_list = df["Batch_ID"].dropna().unique().tolist()
+                available_batches = ["All Active Batches"] + sorted([str(b) for b in batch_list])
+                
+                selected_batch = st.selectbox("Select Batch to Inspect", available_batches)
+                
+                # Apply filter
+                display_df = df if selected_batch == "All Active Batches" else df[df["Batch_ID"] == selected_batch]
+            else:
+                display_df = df
+                st.warning("Column 'Batch_ID' not found in database.")
 
-    st.subheader("Active Shipment Performance")
-    # Batch Recon Report (Relational)
-    if not df.empty:
-        recon = df.groupby("Batch_ID").agg(
-            Count=("Cylinder_ID", "count"),
-            Passed=("Status", lambda x: (x == 'Full').sum()),
-            Failed=("Status", lambda x: (x == 'Damaged').sum())
-        ).reset_index()
-        st.dataframe(recon, use_container_width=True, hide_index=True)
-
+            # 2. Dynamic Metrics
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Units in View", len(display_df))
+            m2.metric("Available (Full)", len(display_df[display_df["Status"] == "Full"]))
+            m3.metric("Quarantine (Damaged)", len(display_df[display_df["Status"] == "Damaged"]))
+            m4.metric("Pending Test", len(display_df[display_df["Status"] == "Empty"]))
+            
+            # 3. Data Table
+            st.markdown("---")
+            st.subheader("Inventory Details")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake (New Batch)":
     st.header("Log Incoming Shipment")
@@ -126,6 +146,7 @@ elif choice == "Inventory Search":
             if not parent.empty:
                 st.write("### Transport Source")
                 st.dataframe(parent, hide_index=True)
+
 
 
 
