@@ -76,14 +76,21 @@ full_df = get_unified_data()
 # --- 3. DYNAMIC NAVIGATION ---
 st.sidebar.title(f"👤 {st.session_state.role}")
 
-# Define which menu items each role can see
+# 1. Initialize a default menu to prevent NameError
+menu = ["Dashboard", "Search Unit"] 
+
+# 2. Assign menu based on roles
 if st.session_state.role == "Admin":
     full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
+    
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ Admin Controls")
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
-    menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
-    st.sidebar.caption("Developer Mode: All pages visible")
+    
+    if dev_mode:
+        menu = full_menu
+    else:
+        menu = ["Dashboard", "Search Unit"] # Restricted Admin view
 
 elif st.session_state.role == "Gas_Company":
     menu = ["Dashboard", "Gas Co Upload", "Search Unit"]
@@ -91,6 +98,7 @@ elif st.session_state.role == "Gas_Company":
 elif st.session_state.role == "Testing_Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
+# 3. Use the choice only after menu is guaranteed to exist
 choice = st.sidebar.radio("Navigation", menu)
 
 if st.sidebar.button("Logout"):
@@ -326,6 +334,7 @@ elif choice == "Gas Co Upload":
                     st.cache_data.clear() # Refresh global data
                 except Exception as e:
                     st.error(f"Error during upload: {e}")
+
 
 
 
