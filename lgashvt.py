@@ -187,7 +187,7 @@ elif choice == "Truck Intake":
         col1, col2 = st.columns(2)
         with col1:
             # The user creates a NEW Batch ID for THIS specific truck
-            new_batch = st.text_input("New Batch ID (e.g., BATCH011)")
+            new_batch = st.text_input("New Batch ID (e.g., BATCH012)")
             # But selects an EXISTING Company
             selected_company = st.selectbox("Company Name", companies)
         with col2:
@@ -210,6 +210,7 @@ elif choice == "Search Unit":
     if sid:
         res = df[df["Cylinder_ID"] == sid]
         st.table(res)
+
 
 
 
