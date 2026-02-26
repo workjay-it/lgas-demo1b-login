@@ -5,7 +5,7 @@ import pytz
 from supabase import create_client
 
 # --- 1. SETTINGS & STYLING ---
-st.set_page_config(page_title="Gas Management", layout="wide")
+st.set_page_config(page_title="KWS | LGAS Management", layout="wide")
 
 # Professional Dark Mode Styling (Fixes "White Boxes")
 st.markdown("""
@@ -204,9 +204,6 @@ else:
     # --- FOOTER ---
     st.markdown("---")
     st.markdown(f"<div style='text-align: center; color: gray;'>KWS LGAS Management | System Refreshed: {st.session_state['last_refresh']}</div>", unsafe_allow_html=True)
-
-
-
 
 
 
