@@ -119,14 +119,16 @@ if choice == "Dashboard":
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
-    batches_df = load_batches()
     
-    if batches_df.empty:
-        st.warning("Register a Batch in 'Truck Intake' first.")
+    if full_df.empty:
+        st.warning("No data found. Register a Batch in 'Truck Intake' first.")
     else:
-        selected_b = st.selectbox("Select Batch to Work On", batches_df["batch_id"].tolist())
-        # FIXED: Changed 'Batch_ID' to 'batch_id'
-        batch_cyls = df[df["batch_id"] == selected_b].copy()
+        # Get unique batch IDs from the master data
+        available_batches = sorted(full_df["batch_id"].unique().tolist())
+        selected_b = st.selectbox("Select Batch to Work On", available_batches)
+        
+        # Filter master data for the selected batch
+        batch_cyls = full_df[full_df["batch_id"] == selected_b].dropna(subset=["Cylinder_ID"]).copy()
         
         if batch_cyls.empty:
             st.info("No cylinders linked to this batch yet.")
@@ -155,6 +157,7 @@ elif choice == "Bulk Processing (Workers)":
                 st.cache_data.clear()
                 st.rerun()
 
+
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
     st.header("Batch Billing & Cost Analysis")
@@ -163,17 +166,24 @@ elif choice == "Financial & Billing":
         "Body Dent Repair": 300, "Re-painting Required": 200, "Foot Ring Straightening": 250, "Condemned": 0
     }
     
-    if not df.empty:
-        # FIXED: Changed 'Batch_ID' to 'batch_id'
-        target_b = st.selectbox("Select Batch for Billing", df["batch_id"].unique())
-        batch_data = df[df["batch_id"] == target_b].copy()
+    if not full_df.empty:
+        # Get unique batch IDs from master data
+        available_batches = sorted(full_df["batch_id"].unique().tolist())
+        target_b = st.selectbox("Select Batch for Billing", available_batches)
+        
+        # Filter and calculate costs
+        batch_data = full_df[full_df["batch_id"] == target_b].dropna(subset=["Cylinder_ID"]).copy()
         batch_data["Cost"] = batch_data["Condition_Notes"].map(RATE_CARD).fillna(0)
         
         c1, c2 = st.columns(2)
         c1.metric("Batch Total Units", len(batch_data))
         c2.metric("Total Repair Bill", f"₹{batch_data['Cost'].sum():,.2f}")
         
-        st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], use_container_width=True, hide_index=True)
+        st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], 
+                     use_container_width=True, hide_index=True)
+    else:
+        st.info("No data available for billing.")
+
 
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
@@ -240,6 +250,7 @@ elif choice == "Search Unit":
                 st.dataframe(results, use_container_width=True, hide_index=True, height=400)
             else:
                 st.info(f"No records found containing: {query}")
+
 
 
 
