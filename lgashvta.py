@@ -300,40 +300,78 @@ elif choice == "Search Unit":
 
 # --- PAGE: GAS CO UPLOAD ---
 elif choice == "Gas Co Upload":
-    st.header("📤 Upload Cylinder Manifest")
-    st.markdown("""
-        Use this section to pre-load cylinders into the system. 
-        **Note:** The `batch_id` used here must match the one entered at Truck Intake.
-    """)
-    
-    with st.expander("📥 Download Template"):
-        template = pd.DataFrame(columns=["Cylinder_ID", "batch_id", "Next_Test_Due"])
-        st.download_button("Download CSV Template", template.to_csv(index=False), "manifest_template.csv", "text/csv")
+    st.header("📤 Add Cylinder Manifest")
+    st.write("Choose your preferred method to add cylinders to the system.")
 
-    uploaded_file = st.file_uploader("Upload Company CSV Manifest", type="csv")
-    
-    if uploaded_file:
-        upload_df = pd.read_csv(uploaded_file)
-        # Basic validation: ensure necessary columns exist
-        required = {"Cylinder_ID", "batch_id"}
-        if not required.issubset(upload_df.columns):
-            st.error(f"Invalid Format. CSV must contain: {required}")
-        else:
-            st.subheader("Data Preview")
-            st.dataframe(upload_df.head(), use_container_width=True)
-            
-            if st.button("🚀 Confirm Bulk Upload to Cloud"):
+    # Create three tabs for the three different methods
+    tab1, tab2, tab3 = st.tabs(["📄 CSV Bulk Upload", "⌨️ Manual Entry", "📸 Scan Barcode"])
+
+    # --- TAB 1: CSV UPLOAD ---
+    with tab1:
+        st.subheader("Bulk Upload via CSV")
+        uploaded_file = st.file_uploader("Upload Company CSV Manifest", type="csv", key="csv_up")
+        if uploaded_file:
+            upload_df = pd.read_csv(uploaded_file)
+            if st.button("🚀 Confirm CSV Upload"):
                 try:
-                    # Clean data before upload
                     upload_df["batch_id"] = upload_df["batch_id"].astype(str).str.strip().str.upper()
                     data_to_insert = upload_df.to_dict(orient='records')
-                    
                     supabase.table("cylinders").insert(data_to_insert).execute()
-                    
                     st.success(f"Successfully uploaded {len(upload_df)} cylinders!")
-                    st.cache_data.clear() # Refresh global data
+                    st.cache_data.clear()
                 except Exception as e:
-                    st.error(f"Error during upload: {e}")
+                    st.error(f"Error: {e}")
+
+    # --- TAB 2: MANUAL ENTRY ---
+    with tab2:
+        st.subheader("Single Unit Entry")
+        with st.form("manual_entry_form"):
+            col1, col2 = st.columns(2)
+            new_id = col1.text_input("Cylinder ID (Serial No)").strip().upper()
+            new_batch = col2.text_input("Batch ID (Assignment)").strip().upper()
+            test_due = st.date_input("Next Test Due Date")
+            
+            if st.form_submit_button("➕ Add Single Cylinder"):
+                if new_id and new_batch:
+                    try:
+                        supabase.table("cylinders").insert({
+                            "Cylinder_ID": new_id,
+                            "batch_id": new_batch,
+                            "Next_Test_Due": str(test_due),
+                            "Status": "Empty" # Default status
+                        }).execute()
+                        st.success(f"Cylinder {new_id} added to Batch {new_batch}")
+                        st.cache_data.clear()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.warning("Please fill in both ID and Batch fields.")
+
+    # --- TAB 3: SCANNING ---
+    with tab3:
+        st.subheader("Mobile Scanner")
+        st.info("Point your camera at the cylinder's barcode or QR code.")
+        
+        # Streamlit's built-in camera input
+        img_file = st.camera_input("Take a photo of the barcode")
+        
+        # Note: Professional barcode decoding usually requires an external library like 'pyzbar' 
+        # or 'opencv', but you can manually type the ID here after seeing the photo 
+        # as a 'visual verification' step for now.
+        if img_file:
+            st.success("Photo captured! Enter the ID seen in the photo below:")
+            scanned_id = st.text_input("Verified ID from Photo").strip().upper()
+            scanned_batch = st.text_input("Batch to Assign to", key="scan_batch").strip().upper()
+            
+            if st.button("Confirm Scanned Entry"):
+                if scanned_id and scanned_batch:
+                    supabase.table("cylinders").insert({
+                        "Cylinder_ID": scanned_id,
+                        "batch_id": scanned_batch,
+                        "Status": "Empty"
+                    }).execute()
+                    st.success("Scanned unit registered!")
+                    st.cache_data.clear()
 
 
 
