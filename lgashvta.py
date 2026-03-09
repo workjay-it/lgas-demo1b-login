@@ -98,121 +98,78 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 # --- PAGE: DASHBOARD ---
+# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
 
     if full_df.empty:
         st.warning("No data found.")
     else:
-        # --- 1. DATA ISOLATION (Security Layer) ---
+        # --- 1. DATA ISOLATION & ADMIN TOGGLE ---
+        # Restoring the "See All" toggle for Admins
         if st.session_state.role == "Admin":
-            all_companies = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-            target_company = st.selectbox("Select Company to view", all_companies)
-            display_df = full_df if target_company == "All Companies" else full_df[full_df["company"] == target_company]
+            all_cos = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
+            
+            # This restores the option to toggle off or on to see specific or all cylinders
+            target_co = st.selectbox("View Scope", all_cos)
+            display_df = full_df if target_co == "All Companies" else full_df[full_df["company"] == target_co]
         
         elif st.session_state.role == "Gas Company":
-            # Link 'gasco' login specifically to 'Indane' (or relevant company)
-            target_company = "Indane" 
-            display_df = full_df[full_df["company"] == target_company]
-            st.info(f"Secure View: {target_company} Data Only")
-        
-        else: # Test Center
-            # Test centers see all yard units to perform inspections
-            target_company = "All Yard Units"
+            target_co = st.session_state.company_link
+            display_df = full_df[full_df["company"] == target_co]
+            st.info(f"📋 Secure View: {target_co}")
+        else:
             display_df = full_df
-            st.info("Operational View: Total Yard Inventory")
 
-        # --- 2. SUMMARY METRICS ---
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Trucks", display_df["batch_id"].nunique())
-        m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
-        m3.metric("Damaged Found", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
-
-        st.markdown("---")
-
-        # --- 3. FILTERED EXPORT CENTER (Old vs New Data) ---
-        with st.expander("Download Data (New or Historical)"):
-            # UI for selecting timeframe
-            time_choice = st.radio("Download Range:", ["All Data", "New (Last 7 Days)", "Historical (Older)"], horizontal=True)
+        # --- 2. COMPLIANCE ALERTS SECTION (Restored) ---
+        # Re-adding the logic that checks for expired test dates
+        st.subheader("⚠️ Compliance Alerts")
+        if "Next_Test_Due" in display_df.columns:
+            today = datetime.now().date()
+            overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
             
-            # Logic for date filtering
+            if not overdue.empty:
+                st.error(f"Critical: {len(overdue)} units have expired test dates.")
+                with st.expander("View Overdue Units"):
+                    st.table(overdue[["Cylinder_ID", "Next_Test_Due", "company"]])
+            else:
+                st.success("✅ All units in this view are compliant.")
+        else:
+            st.info("Test date tracking is currently disabled for this data set.")
+
+        # --- 3. SUMMARY METRICS ---
+        st.markdown("---")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Active Trucks", display_df["batch_id"].nunique())
+        m2.metric("Total Cylinders", len(display_df))
+        m3.metric("Damaged", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
+
+        # --- 4. EXPORT CENTER (Keeping the colleague's new button) ---
+        with st.expander("📥 Filtered Data Export"):
+            time_filter = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
+            
             if "arrival_time" in display_df.columns:
                 display_df["arrival_time"] = pd.to_datetime(display_df["arrival_time"])
                 cutoff = datetime.now() - timedelta(days=7)
-                
-                if time_choice == "New (Last 7 Days)":
+                if time_filter == "New (Last 7 Days)":
                     export_df = display_df[display_df["arrival_time"] >= cutoff]
-                elif time_choice == "Historical (Older)":
+                elif time_filter == "Historical":
                     export_df = display_df[display_df["arrival_time"] < cutoff]
                 else:
                     export_df = display_df
             else:
                 export_df = display_df
-            
-            # The download button is now restricted to the filtered view
-            if not export_df.empty:
-                st.download_button(
-                    label=f"Download {time_choice} as CSV",
-                    data=export_df.to_csv(index=False).encode('utf-8'),
-                    file_name=f"{st.session_state.role}_{time_choice}_{datetime.now().date()}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No records found for this timeframe.")
 
-        st.markdown("---")
-
-        # --- 4. ANALYTICS TABLE ---
-        st.subheader("Batch Summary")
-        summary = display_df.groupby(["batch_id", "company", "truck_number"], dropna=False).agg(
-            Total=("Cylinder_ID", "count"),
-            Ready=("Status", lambda x: (x.astype(str).str.upper() == "FULL").sum()),
-            Damaged=("Status", lambda x: (x.astype(str).str.upper() == "DAMAGED").sum())
-        ).reset_index()
-        st.dataframe(summary, use_container_width=True, hide_index=True)
-# --- PAGE: BULK PROCESSING ---
-elif choice == "Bulk Processing (Workers)":
-    st.header("Production Line Triage")
-    if full_df.empty:
-        st.warning("No data found.")
-    else:
-        available_batches = sorted(full_df["batch_id"].unique().tolist())
-        selected_b = st.selectbox("Select Batch to Work On", available_batches)
-        batch_cyls = full_df[full_df["batch_id"] == selected_b].dropna(subset=["Cylinder_ID"]).copy()
-        
-        if not batch_cyls.empty:
-            edited_df = st.data_editor(
-                batch_cyls[["Cylinder_ID", "Status", "Condition_Notes"]],
-                column_config={
-                    "Status": st.column_config.SelectboxColumn("Result", options=["Full", "Damaged", "Under Maintenance"]),
-                    "Condition_Notes": st.column_config.SelectboxColumn("Damage Type", options=[
-                        "Good / No Repair", "Valve Leak (Minor)", "Valve Replacement", 
-                        "Body Dent Repair", "Re-painting Required", "Foot Ring Straightening", "Condemned"
-                    ]),
-                    "Cylinder_ID": st.column_config.TextColumn("Cylinder ID", disabled=True),
-                },
-                hide_index=True, use_container_width=True, key="worker_editor"
+            st.download_button(
+                label=f"Download {time_filter} CSV",
+                data=export_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"report_{datetime.now().date()}.csv",
+                mime="text/csv"
             )
 
-            if st.button("Submit Production Data"):
-                for _, row in edited_df.iterrows():
-                    supabase.table("cylinders").update({
-                        "Status": row["Status"],
-                        "Condition_Notes": row["Condition_Notes"],
-                        "Last_Test_Date": str(datetime.now().date())
-                    }).eq("Cylinder_ID", row["Cylinder_ID"]).execute()
-                st.success("Cloud Updated Successfully!")
-                st.cache_data.clear()
-                st.rerun()
-            
-            # Daily Log Export for Test Center
-            if st.session_state.role in ["Admin", "Test Center"]:
-                st.download_button(
-                    label="📥 Download Today's Work Log",
-                    data=batch_cyls.to_csv(index=False).encode('utf-8'),
-                    file_name=f"test_center_worklog_{datetime.now().date()}.csv",
-                    mime="text/csv"
-                )
+        st.markdown("---")
+        st.subheader("Batch Summary")
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
@@ -326,6 +283,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
