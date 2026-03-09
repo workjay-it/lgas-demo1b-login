@@ -96,6 +96,7 @@ choice = st.sidebar.radio("Navigation", menu)
 if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
+    
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
@@ -106,32 +107,30 @@ if choice == "Dashboard":
         # 1. ADMIN TOGGLE (View Scope)
         if st.session_state.role == "Admin":
             all_cos = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-            # This dropdown allows toggling between 'All' and specific companies
             target_co = st.selectbox("View Scope", all_cos)
             display_df = full_df if target_co == "All Companies" else full_df[full_df["company"] == target_co]
         elif st.session_state.role == "Gas Company":
             target_co = st.session_state.get('company_link', "Indane")
             display_df = full_df[full_df["company"] == target_co]
-            st.info(f"📋 Secure View: {target_co}")
+            st.info(f"Secure View: {target_co}")
         else:
             display_df = full_df
 
-        # 2. SUMMARY METRICS (Top Level)
+        # 2. SUMMARY METRICS
         m1, m2, m3 = st.columns(3)
         m1.metric("Active Trucks", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", len(display_df))
         m3.metric("Damaged", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
 
         # 3. COMPLIANCE ALERTS (Concise & Scrollable)
-        st.markdown("### ⚠️ Compliance Alerts")
+        st.markdown("Compliance Alerts")
         if "Next_Test_Due" in display_df.columns:
             today = datetime.now().date()
             overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
             
             if not overdue.empty:
                 st.error(f"Critical: {len(overdue)} units have expired test dates.")
-                with st.expander("🔍 View Overdue Units (Scrollable)"):
-                    # Using dataframe with height makes it a concise, scrollable table
+                with st.expander("View Overdue Units (Scrollable)"):
                     st.dataframe(
                         overdue[["Cylinder_ID", "Next_Test_Due", "company"]], 
                         height=200, 
@@ -139,11 +138,10 @@ if choice == "Dashboard":
                         hide_index=True
                     )
             else:
-                st.success("✅ All units in this view are compliant.")
+                st.success("All units in this view are compliant.")
 
-        # 4. EXPORT CENTER (Fixes the NameError)
-        with st.expander("📥 Filtered Data Export"):
-            # Defining the variable locally to prevent NameError
+        # 4. EXPORT CENTER
+        with st.expander("Filtered Data Export"):
             export_timeframe = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
             
             if "arrival_time" in display_df.columns:
@@ -159,17 +157,23 @@ if choice == "Dashboard":
                 export_df = display_df
 
             st.download_button(
-                label=f"Download {export_timeframe} CSV",
+                label=f"Download CSV",
                 data=export_df.to_csv(index=False).encode('utf-8'),
                 file_name=f"report_{datetime.now().date()}.csv",
                 mime="text/csv"
             )
 
-        # 5. BATCH SUMMARY (List of all cylinders)
+        # 5. MASTER INVENTORY TOGGLE (New Feature)
         st.markdown("---")
-        st.subheader("📋 Master Inventory List")
-        # Shows all cylinders based on the selected 'View Scope'
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        show_inventory = st.toggle("Show Master Inventory List", value=True)
+        
+        if show_inventory:
+            st.subheader("📋 Master Inventory List")
+            # Displays the full list only if the toggle is ON
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Inventory list is hidden. Use the toggle above to view all records.")
+            
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
     st.header("Batch Billing & Cost Analysis")
@@ -282,6 +286,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
