@@ -96,7 +96,6 @@ choice = st.sidebar.radio("Navigation", menu)
 if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
-
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
@@ -104,50 +103,55 @@ if choice == "Dashboard":
     if full_df.empty:
         st.warning("No data found.")
     else:
-        # --- 1. ADMIN TOGGLE & DATA SCOPE ---
-        # This restores the dropdown to toggle between 'All Companies' and specific ones
+        # 1. ADMIN TOGGLE (View Scope)
         if st.session_state.role == "Admin":
             all_cos = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
+            # This dropdown allows toggling between 'All' and specific companies
             target_co = st.selectbox("View Scope", all_cos)
             display_df = full_df if target_co == "All Companies" else full_df[full_df["company"] == target_co]
-        
         elif st.session_state.role == "Gas Company":
-            # Uses the dynamic link from your profiles table
-            target_co = st.session_state.company_link
+            target_co = st.session_state.get('company_link', "Indane")
             display_df = full_df[full_df["company"] == target_co]
             st.info(f"📋 Secure View: {target_co}")
         else:
             display_df = full_df
 
-        # --- 2. SUMMARY METRICS (Moved back to the top) ---
+        # 2. SUMMARY METRICS (Top Level)
         m1, m2, m3 = st.columns(3)
         m1.metric("Active Trucks", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", len(display_df))
         m3.metric("Damaged", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
 
-        # --- 3. COMPLIANCE ALERTS (Moved below metrics) ---
+        # 3. COMPLIANCE ALERTS (Concise & Scrollable)
+        st.markdown("### ⚠️ Compliance Alerts")
         if "Next_Test_Due" in display_df.columns:
             today = datetime.now().date()
-            # Filters for units past their test date
             overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
             
             if not overdue.empty:
-                st.error(f"⚠️ Compliance Alert: {len(overdue)} units have expired test dates.")
-                with st.expander("🔍 View Overdue Units"):
-                    st.table(overdue[["Cylinder_ID", "Next_Test_Due", "company"]])
+                st.error(f"Critical: {len(overdue)} units have expired test dates.")
+                with st.expander("🔍 View Overdue Units (Scrollable)"):
+                    # Using dataframe with height makes it a concise, scrollable table
+                    st.dataframe(
+                        overdue[["Cylinder_ID", "Next_Test_Due", "company"]], 
+                        height=200, 
+                        use_container_width=True,
+                        hide_index=True
+                    )
             else:
                 st.success("✅ All units in this view are compliant.")
 
-        # --- 4. EXPORT CENTER ---
+        # 4. EXPORT CENTER (Fixes the NameError)
         with st.expander("📥 Filtered Data Export"):
-            time_filter = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
+            # Defining the variable locally to prevent NameError
+            export_timeframe = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
             
             if "arrival_time" in display_df.columns:
                 display_df["arrival_time"] = pd.to_datetime(display_df["arrival_time"])
                 cutoff = datetime.now() - timedelta(days=7)
-                if time_filter == "New (Last 7 Days)":
+                if export_timeframe == "New (Last 7 Days)":
                     export_df = display_df[display_df["arrival_time"] >= cutoff]
-                elif time_filter == "Historical":
+                elif export_timeframe == "Historical":
                     export_df = display_df[display_df["arrival_time"] < cutoff]
                 else:
                     export_df = display_df
@@ -155,16 +159,17 @@ if choice == "Dashboard":
                 export_df = display_df
 
             st.download_button(
-                label=f"Download {time_choice} CSV",
+                label=f"Download {export_timeframe} CSV",
                 data=export_df.to_csv(index=False).encode('utf-8'),
                 file_name=f"report_{datetime.now().date()}.csv",
                 mime="text/csv"
             )
 
+        # 5. BATCH SUMMARY (List of all cylinders)
         st.markdown("---")
-        st.subheader("Batch Summary")
+        st.subheader("📋 Master Inventory List")
+        # Shows all cylinders based on the selected 'View Scope'
         st.dataframe(display_df, use_container_width=True, hide_index=True)
-
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
     st.header("Batch Billing & Cost Analysis")
@@ -277,6 +282,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
