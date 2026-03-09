@@ -98,53 +98,47 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 # --- PAGE: DASHBOARD ---
-# --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
 
     if full_df.empty:
         st.warning("No data found.")
     else:
-        # --- 1. DATA ISOLATION & ADMIN TOGGLE ---
-        # Restoring the "See All" toggle for Admins
+        # --- 1. ADMIN TOGGLE & DATA SCOPE ---
+        # This restores the dropdown to toggle between 'All Companies' and specific ones
         if st.session_state.role == "Admin":
             all_cos = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
-            
-            # This restores the option to toggle off or on to see specific or all cylinders
             target_co = st.selectbox("View Scope", all_cos)
             display_df = full_df if target_co == "All Companies" else full_df[full_df["company"] == target_co]
         
         elif st.session_state.role == "Gas Company":
+            # Uses the dynamic link from your profiles table
             target_co = st.session_state.company_link
             display_df = full_df[full_df["company"] == target_co]
             st.info(f"📋 Secure View: {target_co}")
         else:
             display_df = full_df
 
-        # --- 2. COMPLIANCE ALERTS SECTION (Restored) ---
-        # Re-adding the logic that checks for expired test dates
-        st.subheader("⚠️ Compliance Alerts")
-        if "Next_Test_Due" in display_df.columns:
-            today = datetime.now().date()
-            overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
-            
-            if not overdue.empty:
-                st.error(f"Critical: {len(overdue)} units have expired test dates.")
-                with st.expander("View Overdue Units"):
-                    st.table(overdue[["Cylinder_ID", "Next_Test_Due", "company"]])
-            else:
-                st.success("✅ All units in this view are compliant.")
-        else:
-            st.info("Test date tracking is currently disabled for this data set.")
-
-        # --- 3. SUMMARY METRICS ---
-        st.markdown("---")
+        # --- 2. SUMMARY METRICS (Moved back to the top) ---
         m1, m2, m3 = st.columns(3)
         m1.metric("Active Trucks", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", len(display_df))
         m3.metric("Damaged", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
 
-        # --- 4. EXPORT CENTER (Keeping the colleague's new button) ---
+        # --- 3. COMPLIANCE ALERTS (Moved below metrics) ---
+        if "Next_Test_Due" in display_df.columns:
+            today = datetime.now().date()
+            # Filters for units past their test date
+            overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
+            
+            if not overdue.empty:
+                st.error(f"⚠️ Compliance Alert: {len(overdue)} units have expired test dates.")
+                with st.expander("🔍 View Overdue Units"):
+                    st.table(overdue[["Cylinder_ID", "Next_Test_Due", "company"]])
+            else:
+                st.success("✅ All units in this view are compliant.")
+
+        # --- 4. EXPORT CENTER ---
         with st.expander("📥 Filtered Data Export"):
             time_filter = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
             
@@ -161,7 +155,7 @@ if choice == "Dashboard":
                 export_df = display_df
 
             st.download_button(
-                label=f"Download {time_filter} CSV",
+                label=f"Download {time_choice} CSV",
                 data=export_df.to_csv(index=False).encode('utf-8'),
                 file_name=f"report_{datetime.now().date()}.csv",
                 mime="text/csv"
@@ -283,6 +277,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
