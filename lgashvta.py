@@ -101,16 +101,17 @@ choice = st.sidebar.radio("Navigation", menu)
 if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
-# --- PAGE: USER MANAGEMENT (Complete Section) ---
+
+
+# --- PAGE: USER MANAGEMENT ---
 elif choice == "User Management":
-    st.header("👥 Account Credentials Manager")
+    st.header("Account Credentials Manager")
     
-    # 1. Fresh load directly from the local JSON file
+    # 1. Load data from the local file
     creds = load_credentials()
     
-    # 2. STATUS BOARD: Always visible at the top
-    st.subheader("📍 Current Active Credentials")
-    
+    # 2. STATUS BOARD (Always Visible at the Top)
+    st.subheader("Current Active Credentials")
     display_list = []
     for slot, details in creds.items():
         display_list.append({
@@ -119,46 +120,40 @@ elif choice == "User Management":
             "Role": details[1],
             "Assigned Company": details[2]
         })
-    
-    # Force the display to only show the rows present in the JSON
     st.table(pd.DataFrame(display_list)) 
 
     st.markdown("---")
 
-    # 3. EDIT SECTION: Interface to change the credentials
-    st.subheader("🔄 Update Account Details")
-    
-    # Dropdown to select which of the 3 slots to modify
+    # 3. EDIT SECTION (Visible, but the "Save" button is locked)
+    st.subheader("Update Account Details")
     account_slots = list(creds.keys())
     selected_slot = st.selectbox("Select Account Slot to Modify", account_slots)
     
-    with st.container():
-        # Get current values to show as defaults in the text boxes
-        current_pass = creds[selected_slot][0]
-        current_role = creds[selected_slot][1]
-        current_link = creds[selected_slot][2]
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            # Removed type="password" so the Admin can see what they are typing
-            new_password = st.text_input("Set New Password", value=current_pass)
-        with col2:
-            new_link = st.text_input("Assign to Company (Client Link)", value=current_link)
-        
-        st.info(f"Modifying the {current_role} login slot.")
+    col1, col2 = st.columns(2)
+    with col1:
+        new_password = st.text_input("Set New Password", value=creds[selected_slot][0])
+    with col2:
+        new_link = st.text_input("Assign to Company", value=creds[selected_slot][2])
+    
+    st.info(f"Modifying the {creds[selected_slot][1]} login slot.")
 
-        if st.button("Apply & Save Changes"):
-            # Update the dictionary values
-            creds[selected_slot] = [new_password, current_role, new_link]
-            
-            # Save the updated dictionary back to the JSON file
+    # 4. THE SAFETY LOCK (Only protects the saving action)
+    st.markdown("#### Administrative Authorization  ####")
+    master_key_input = st.text_input("Enter Master Admin Key to Save Changes", type="password")
+
+    # Define the secret key
+    ACTUAL_MASTER_KEY = "kws2026" 
+
+    if st.button("Apply & Save Changes"):
+        if master_key_input == ACTUAL_MASTER_KEY:
+            # Update and Save
+            creds[selected_slot] = [new_password, creds[selected_slot][1], new_link]
             with open("creds.json", "w") as f:
                 json.dump(creds, f)
-                
-            st.success(f"Changes for {selected_slot} saved to local registry!")
-            # Rerun forces the table at the top to refresh immediately
+            st.success("Credentials updated successfully!")
             st.rerun()
-
+        else:
+            st.error("❌ Incorrect Master Admin Key. You do not have permission to change credentials.")
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -342,6 +337,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
