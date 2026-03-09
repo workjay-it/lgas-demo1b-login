@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from supabase import create_client
+import json
+import os
 
 # --- 1. SETTINGS & STYLING ---
 st.set_page_config(page_title="Domestic Gas Logistics Portal", layout="wide")
@@ -16,30 +18,41 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1.5 LOGIN & ACCESS CONTROL ---
+# --- 1.5 LOGIN & ACCESS CONTROL (Local JSON Version) ---
 if 'role' not in st.session_state:
     st.session_state.role = None
 
+def load_credentials():
+    # If file doesn't exist, create a default one
+    if not os.path.exists("credentials.json"):
+        default_creds = {
+            "admin": ["admin123", "Admin", "All"],
+            "gasco": ["gas2026", "Gas Company", "HP Gas"],
+            "testco": ["test99", "Test Center", "North Yard"]
+        }
+        with open("credentials.json", "w") as f:
+            json.dump(default_creds, f)
+    
+    with open("credentials.json", "r") as f:
+        return json.load(f)
+
 def login():
+    creds = load_credentials()
     with st.container():
         st.subheader("Gas Logistics Portal Login")
         user = st.text_input("Username")
         pwd = st.text_input("Password", type="password")
         if st.button("Login"):
-            # Credentials for different roles
-            if user == "admin" and pwd == "admin123":
-                st.session_state.role = "Admin"
-            elif user == "gasco" and pwd == "gas2026":
-                st.session_state.role = "Gas Company"
-            elif user == "testco" and pwd == "test99":
-                st.session_state.role = "Test Center"
+            if user in creds and pwd == creds[user][0]:
+                st.session_state.role = creds[user][1]
+                st.session_state.company_link = creds[user][2] # Assigns company link from JSON
+                st.rerun()
             else:
                 st.error("Invalid credentials")
-            st.rerun()
 
 if st.session_state.role is None:
     login()
-    st.stop() # Prevents data loading until login
+    st.stop()
 
 # --- 2. DATABASE CONNECTION & GLOBAL DATA ---
 @st.cache_resource
@@ -55,16 +68,12 @@ def get_unified_data():
         c_res = supabase.table("cylinders").select("*").execute()
         b_df = pd.DataFrame(b_res.data)
         c_df = pd.DataFrame(c_res.data)
-        
         if b_df.empty: return pd.DataFrame()
-
         if "Batch_ID" in c_df.columns:
             c_df = c_df.rename(columns={"Batch_ID": "batch_id"})
-        
         b_df["batch_id"] = b_df["batch_id"].astype(str).str.strip().str.upper()
         if not c_df.empty:
             c_df["batch_id"] = c_df["batch_id"].astype(str).str.strip().str.upper()
-            
         return pd.merge(b_df, c_df, on="batch_id", how="left")
     except Exception as e:
         st.error(f"Database sync error: {e}")
@@ -73,114 +82,116 @@ def get_unified_data():
 full_df = get_unified_data()
 
 # --- 3. DYNAMIC NAVIGATION ---
-st.sidebar.title(f"👤 {st.session_state.role}")
-
-# Default menu to prevent NameError
+st.sidebar.title(f"{st.session_state.role}")
 menu = ["Dashboard", "Search Unit"] 
 
 if st.session_state.role == "Admin":
-    # 1. ADMIN CONTROLS HEADER
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ Admin Controls")
-    
-    # 2. DEVELOPER MODE TOGGLE
-    # This matches the red/orange toggle style in your screenshot
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
-    
-    # 3. CONDITIONAL MENU
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
-
 elif st.session_state.role == "Gas Company":
     menu = ["Dashboard", "Gas Co Upload", "Search Unit"]
-
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-# 4. NAVIGATION SELECTION
 choice = st.sidebar.radio("Navigation", menu)
 
 if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
 
+# --- PAGE: USER MANAGEMENT (Local File Management) ---
+if choice == "User Management":
+    st.header("👥 Local User Management")
+    creds = load_credentials()
+    
+    st.subheader("Current Local Registry")
+    st.write(pd.DataFrame.from_dict(creds, orient='index', columns=['Password', 'Role', 'Company Link']))
+
+    st.markdown("---")
+    st.subheader("🔄 Update/Add Account")
+    u_name = st.text_input("Username to Update/Add")
+    u_pass = st.text_input("Password")
+    u_role = st.selectbox("Role", ["Admin", "Gas Company", "Test Center"])
+    u_link = st.text_input("Company Link (e.g., HP Gas)")
+
+    if st.button("Save to local file"):
+        creds[u_name] = [u_pass, u_role, u_link]
+        with open("credentials.json", "w") as f:
+            json.dump(creds, f)
+        st.success(f"Credentials for {u_name} saved locally!")
 
 # --- PAGE: DASHBOARD ---
-if choice == "Dashboard":
+elif choice == "Dashboard":
     st.header("Fleet Intelligence & Batch Analytics")
 
     if full_df.empty:
         st.warning("No data found.")
     else:
-        # 1. ADMIN TOGGLE (View Scope)
+        # 1. SECURITY FILTERING
         if st.session_state.role == "Admin":
             all_cos = ["All Companies"] + sorted([str(c) for c in full_df["company"].unique() if c])
             target_co = st.selectbox("View Scope", all_cos)
             display_df = full_df if target_co == "All Companies" else full_df[full_df["company"] == target_co]
-        elif st.session_state.role == "Gas Company":
-            target_co = st.session_state.get('company_link', "Indane")
-            display_df = full_df[full_df["company"] == target_co]
-            st.info(f"Secure View: {target_co}")
         else:
-            display_df = full_df
+            target_co = st.session_state.get('company_link', "All")
+            display_df = full_df[full_df["company"] == target_co] if target_co != "All" else full_df
+            st.info(f"Secure View: {target_co}")
 
-        # 2. SUMMARY METRICS
+        # 2. METRICS
         m1, m2, m3 = st.columns(3)
-        m1.metric("Active Trucks", display_df["batch_id"].nunique())
+        m1.metric("Active Batches", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", len(display_df))
         m3.metric("Damaged", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
 
-        # 3. COMPLIANCE ALERTS (Concise & Scrollable)
-        st.markdown("Compliance Alerts")
+        st.markdown("---")
+
+        # 3. COMPLIANCE ALERTS WITH DOWNLOAD
+        st.subheader("Compliance Status")
         if "Next_Test_Due" in display_df.columns:
+            display_df["Next_Test_Due"] = pd.to_datetime(display_df["Next_Test_Due"], errors='coerce')
             today = datetime.now().date()
-            overdue = display_df[pd.to_datetime(display_df["Next_Test_Due"]).dt.date < today]
+            overdue = display_df[display_df["Next_Test_Due"].dt.date <= (today + timedelta(days=7))]
             
             if not overdue.empty:
-                st.error(f"Critical: {len(overdue)} units have expired test dates.")
-                with st.expander("View Overdue Units"):
-                    st.dataframe(
-                        overdue[["Cylinder_ID", "Next_Test_Due", "company"]], 
-                        height=200, 
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                st.error(f"⚠️ {len(overdue)} Units require Immediate Testing")
+                st.dataframe(overdue[["Cylinder_ID", "batch_id", "Next_Test_Due"]], use_container_width=True, hide_index=True)
+                
+                st.download_button(
+                    label="📥 Download Compliance List (CSV)",
+                    data=overdue.to_csv(index=False).encode('utf-8'),
+                    file_name=f"compliance_{today}.csv",
+                    mime='text/csv',
+                    key="comp_dl"
+                )
             else:
-                st.success("All units in this view are compliant.")
+                st.success("All units are currently compliant.")
 
-        # 4. EXPORT CENTER
-        with st.expander("Filtered Data Export"):
-            export_timeframe = st.radio("Timeframe:", ["All Data", "New (Last 7 Days)", "Historical"], horizontal=True)
-            
-            if "arrival_time" in display_df.columns:
-                display_df["arrival_time"] = pd.to_datetime(display_df["arrival_time"])
-                cutoff = datetime.now() - timedelta(days=7)
-                if export_timeframe == "New (Last 7 Days)":
-                    export_df = display_df[display_df["arrival_time"] >= cutoff]
-                elif export_timeframe == "Historical":
-                    export_df = display_df[display_df["arrival_time"] < cutoff]
-                else:
-                    export_df = display_df
-            else:
-                export_df = display_df
-
-            st.download_button(
-                label=f"Download CSV",
-                data=export_df.to_csv(index=False).encode('utf-8'),
-                file_name=f"report_{datetime.now().date()}.csv",
-                mime="text/csv"
-            )
-
-        # 5. MASTER INVENTORY TOGGLE (New Feature)
         st.markdown("---")
-        show_inventory = st.toggle("Show Master Inventory List", value=True)
-        
-        if show_inventory:
-            st.subheader("📋 Master Inventory List")
-            # Displays the full list only if the toggle is ON
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("Inventory list is hidden currently.")
+
+        # 4. BATCH VISUALIZATION (Now below Compliance)
+        st.subheader("Batch Distribution")
+        if not display_df.empty:
+            batch_counts = display_df.groupby("batch_id").size().reset_index(name="Units")
+            st.bar_chart(batch_counts.set_index("batch_id"), height=350)
+
+        st.markdown("---")
+
+        # 5. MASTER INVENTORY TOGGLE
+        with st.expander("View Detailed Records & Export"):
+            show_inventory = st.toggle("Show Master Inventory List", value=False)
+            if show_inventory:
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            st.download_button(
+                label=f"Download Full Inventory (CSV)",
+                data=display_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"report_{datetime.now().date()}.csv",
+                mime="text/csv",
+                key="full_dl"
+            )
             
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
@@ -294,6 +305,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
