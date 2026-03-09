@@ -17,13 +17,12 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 1.5 LOGIN & ACCESS CONTROL ---
-# This block must come BEFORE any database or data loading logic
 if 'role' not in st.session_state:
     st.session_state.role = None
 
 def login():
     with st.container():
-        st.subheader("Gas Logistics Portal")
+        st.subheader("🔑 Gas Logistics Portal Login")
         user = st.text_input("Username")
         pwd = st.text_input("Password", type="password")
         if st.button("Login"):
@@ -40,7 +39,7 @@ def login():
 
 if st.session_state.role is None:
     login()
-    st.stop() # Prevents the rest of the script from running until login is successful
+    st.stop() # Prevents data loading until login
 
 # --- 2. DATABASE CONNECTION & GLOBAL DATA ---
 @st.cache_resource
@@ -76,29 +75,22 @@ full_df = get_unified_data()
 # --- 3. DYNAMIC NAVIGATION ---
 st.sidebar.title(f"👤 {st.session_state.role}")
 
-# 1. Initialize a default menu to prevent NameError
+# Default menu to prevent NameError
 menu = ["Dashboard", "Search Unit"] 
 
-# 2. Assign menu based on roles
 if st.session_state.role == "Admin":
     full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
-    
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ Admin Controls")
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
-    
-    if dev_mode:
-        menu = full_menu
-    else:
-        menu = ["Dashboard", "Search Unit"] # Restricted Admin view
+    menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
 
-elif st.session_state.role == "Gas_Company":
+elif st.session_state.role == "Gas Company":
     menu = ["Dashboard", "Gas Co Upload", "Search Unit"]
 
-elif st.session_state.role == "Testing_Center":
+elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-# 3. Use the choice only after menu is guaranteed to exist
 choice = st.sidebar.radio("Navigation", menu)
 
 if st.sidebar.button("Logout"):
@@ -121,6 +113,15 @@ if choice == "Dashboard":
         m1.metric("Trucks in Yard", display_df["batch_id"].nunique())
         m2.metric("Total Cylinders", display_df["Cylinder_ID"].count())
         m3.metric("Damaged Found", (display_df["Status"].astype(str).str.upper() == "DAMAGED").sum())
+
+        # Global Export for Admin
+        if st.session_state.role == "Admin":
+            st.download_button(
+                label="📥 Download Master Report (CSV)",
+                data=full_df.to_csv(index=False).encode('utf-8'),
+                file_name=f"master_report_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
 
         st.markdown("---")
 
@@ -146,40 +147,21 @@ if choice == "Dashboard":
             
             if not alerts.empty:
                 st.error(f"Alert: {len(alerts)} units require re-testing soon.")
-                alerts_display = alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]].copy()
-                alerts_display["Next_Test_Due"] = alerts_display["Next_Test_Due"].dt.date
-                st.dataframe(alerts_display, use_container_width=True, hide_index=True, height=250)
+                st.dataframe(alerts[["Cylinder_ID", "batch_id", "Next_Test_Due"]], use_container_width=True, hide_index=True)
             else:
                 st.success("All units are currently compliant.")
-        
-        st.markdown("---")
-
-        # 4. INDIVIDUAL DATA
-        show_list = st.toggle("Show Individual Cylinder Records", value=False)
-        if show_list:
-            st.subheader("Individual Cylinder Data")
-            list_df = display_df.dropna(subset=["Cylinder_ID"])
-            if not list_df.empty:
-                st.dataframe(list_df, use_container_width=True, hide_index=True, height=500)
-
 
 # --- PAGE: BULK PROCESSING ---
 elif choice == "Bulk Processing (Workers)":
     st.header("Production Line Triage")
-    
     if full_df.empty:
-        st.warning("No data found. Register a Batch in 'Truck Intake' first.")
+        st.warning("No data found.")
     else:
-        # Get unique batch IDs from the master data
         available_batches = sorted(full_df["batch_id"].unique().tolist())
         selected_b = st.selectbox("Select Batch to Work On", available_batches)
-        
-        # Filter master data for the selected batch
         batch_cyls = full_df[full_df["batch_id"] == selected_b].dropna(subset=["Cylinder_ID"]).copy()
         
-        if batch_cyls.empty:
-            st.info("No cylinders linked to this batch yet.")
-        else:
+        if not batch_cyls.empty:
             edited_df = st.data_editor(
                 batch_cyls[["Cylinder_ID", "Status", "Condition_Notes"]],
                 column_config={
@@ -203,7 +185,15 @@ elif choice == "Bulk Processing (Workers)":
                 st.success("Cloud Updated Successfully!")
                 st.cache_data.clear()
                 st.rerun()
-
+            
+            # Daily Log Export for Test Center
+            if st.session_state.role in ["Admin", "Test Center"]:
+                st.download_button(
+                    label="📥 Download Today's Work Log",
+                    data=batch_cyls.to_csv(index=False).encode('utf-8'),
+                    file_name=f"test_center_worklog_{datetime.now().date()}.csv",
+                    mime="text/csv"
+                )
 
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
@@ -214,23 +204,18 @@ elif choice == "Financial & Billing":
     }
     
     if not full_df.empty:
-        # Get unique batch IDs from master data
-        available_batches = sorted(full_df["batch_id"].unique().tolist())
-        target_b = st.selectbox("Select Batch for Billing", available_batches)
-        
-        # Filter and calculate costs
+        target_b = st.selectbox("Select Batch for Billing", sorted(full_df["batch_id"].unique().tolist()))
         batch_data = full_df[full_df["batch_id"] == target_b].dropna(subset=["Cylinder_ID"]).copy()
         batch_data["Cost"] = batch_data["Condition_Notes"].map(RATE_CARD).fillna(0)
         
-        c1, c2 = st.columns(2)
-        c1.metric("Batch Total Units", len(batch_data))
-        c2.metric("Total Repair Bill", f"₹{batch_data['Cost'].sum():,.2f}")
-        
+        st.metric("Total Repair Bill", f"₹{batch_data['Cost'].sum():,.2f}")
         st.dataframe(batch_data[batch_data["Cost"] > 0][["Cylinder_ID", "Condition_Notes", "Cost"]], 
                      use_container_width=True, hide_index=True)
-    else:
-        st.info("No data available for billing.")
-
+        
+        # Download Bill as CSV
+        st.download_button(label="📥 Download Bill (CSV)", 
+                          data=batch_data.to_csv(index=False).encode('utf-8'),
+                          file_name=f"bill_{target_b}.csv")
 
 # --- PAGE: TRUCK INTAKE ---
 elif choice == "Truck Intake":
@@ -258,123 +243,70 @@ elif choice == "Truck Intake":
                         "arrival_time": str(datetime.now())
                     }).execute()
                     st.cache_data.clear()
-                    st.success(f"Batch {clean_batch_id} registered successfully.")
+                    st.success(f"Batch {clean_batch_id} registered.")
                 except Exception as e:
                     st.error(f"Error: {e}")
-            else:
-                st.warning("Please enter a Batch ID.")
-
 
 # --- PAGE: SEARCH ---
 elif choice == "Search Unit":
     st.header("Search Inventory")
-    
     col1, col2 = st.columns([1, 3])
     with col1:
         search_type = st.selectbox("Search By", ["Cylinder ID", "Batch ID", "Truck Plate"])
     with col2:
         query = st.text_input(f"Enter {search_type}").strip().upper()
 
-    if query:
-        if full_df.empty:
-            st.warning("No data available.")
+    if query and not full_df.empty:
+        if search_type == "Cylinder ID":
+            results = full_df[full_df["Cylinder_ID"].astype(str).str.upper().str.contains(query, na=False)]
+        elif search_type == "Batch ID":
+            results = full_df[full_df["batch_id"].astype(str).str.upper().str.contains(query, na=False)]
         else:
-            # Flexible searching using .str.contains()
-            if search_type == "Cylinder ID":
-                results = full_df[full_df["Cylinder_ID"].astype(str).str.upper().str.contains(query, na=False)]
-            elif search_type == "Batch ID":
-                results = full_df[full_df["batch_id"].astype(str).str.upper().str.contains(query, na=False)]
-            elif search_type == "Truck Plate":
-                results = full_df[full_df["truck_number"].astype(str).str.upper().str.contains(query, na=False)]
+            results = full_df[full_df["truck_number"].astype(str).str.upper().str.contains(query, na=False)]
 
-            if not results.empty:
-                st.success(f"Found {len(results)} matching record(s).")
-                
-                if search_type != "Cylinder ID":
-                    first = results.iloc[0]
-                    st.info(f"Company: {first.get('company', 'N/A')} | Driver: {first.get('driver_name', 'N/A')}")
-                
-                st.dataframe(results, use_container_width=True, hide_index=True, height=400)
-            else:
-                st.info(f"No records found containing: {query}")
+        if not results.empty:
+            st.dataframe(results, use_container_width=True, hide_index=True)
+        else:
+            st.info("No records found.")
 
 # --- PAGE: GAS CO UPLOAD ---
 elif choice == "Gas Co Upload":
     st.header("📤 Add Cylinder Manifest")
-    st.write("Choose your preferred method to add cylinders to the system.")
-
-    # Create three tabs for the three different methods
     tab1, tab2, tab3 = st.tabs(["📄 CSV Bulk Upload", "⌨️ Manual Entry", "📸 Scan Barcode"])
 
-    # --- TAB 1: CSV UPLOAD ---
     with tab1:
-        st.subheader("Bulk Upload via CSV")
-        uploaded_file = st.file_uploader("Upload Company CSV Manifest", type="csv", key="csv_up")
+        uploaded_file = st.file_uploader("Upload Company CSV Manifest", type="csv")
         if uploaded_file:
             upload_df = pd.read_csv(uploaded_file)
             if st.button("🚀 Confirm CSV Upload"):
                 try:
                     upload_df["batch_id"] = upload_df["batch_id"].astype(str).str.strip().str.upper()
-                    data_to_insert = upload_df.to_dict(orient='records')
-                    supabase.table("cylinders").insert(data_to_insert).execute()
-                    st.success(f"Successfully uploaded {len(upload_df)} cylinders!")
+                    supabase.table("cylinders").insert(upload_df.to_dict(orient='records')).execute()
+                    st.success("Successfully uploaded!")
                     st.cache_data.clear()
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-    # --- TAB 2: MANUAL ENTRY ---
     with tab2:
-        st.subheader("Single Unit Entry")
-        with st.form("manual_entry_form"):
-            col1, col2 = st.columns(2)
-            new_id = col1.text_input("Cylinder ID (Serial No)").strip().upper()
-            new_batch = col2.text_input("Batch ID (Assignment)").strip().upper()
-            test_due = st.date_input("Next Test Due Date")
-            
-            if st.form_submit_button("➕ Add Single Cylinder"):
-                if new_id and new_batch:
-                    try:
-                        supabase.table("cylinders").insert({
-                            "Cylinder_ID": new_id,
-                            "batch_id": new_batch,
-                            "Next_Test_Due": str(test_due),
-                            "Status": "Empty" # Default status
-                        }).execute()
-                        st.success(f"Cylinder {new_id} added to Batch {new_batch}")
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Please fill in both ID and Batch fields.")
+        with st.form("manual_entry"):
+            c1, c2 = st.columns(2)
+            cid = c1.text_input("Cylinder ID")
+            bid = c2.text_input("Batch ID")
+            t_due = st.date_input("Test Due Date")
+            if st.form_submit_button("Add Single Cylinder"):
+                supabase.table("cylinders").insert({"Cylinder_ID": cid.upper(), "batch_id": bid.upper(), "Next_Test_Due": str(t_due), "Status": "Empty"}).execute()
+                st.success("Added!")
+                st.cache_data.clear()
 
-    # --- TAB 3: SCANNING ---
     with tab3:
-        st.subheader("Mobile Scanner")
-        st.info("Point your camera at the cylinder's barcode or QR code.")
-        
-        # Streamlit's built-in camera input
         img_file = st.camera_input("Take a photo of the barcode")
-        
-        # Note: Professional barcode decoding usually requires an external library like 'pyzbar' 
-        # or 'opencv', but you can manually type the ID here after seeing the photo 
-        # as a 'visual verification' step for now.
         if img_file:
-            st.success("Photo captured! Enter the ID seen in the photo below:")
             scanned_id = st.text_input("Verified ID from Photo").strip().upper()
-            scanned_batch = st.text_input("Batch to Assign to", key="scan_batch").strip().upper()
-            
+            scanned_batch = st.text_input("Assign to Batch").strip().upper()
             if st.button("Confirm Scanned Entry"):
-                if scanned_id and scanned_batch:
-                    supabase.table("cylinders").insert({
-                        "Cylinder_ID": scanned_id,
-                        "batch_id": scanned_batch,
-                        "Status": "Empty"
-                    }).execute()
-                    st.success("Scanned unit registered!")
-                    st.cache_data.clear()
-
-
-
+                supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
+                st.success("Scanned unit registered!")
+                st.cache_data.clear()
 
 
 
