@@ -24,13 +24,13 @@ if 'role' not in st.session_state:
 
 def load_credentials():
     # If file doesn't exist, create a default one
-    if not os.path.exists("credentials.json"):
+    if not os.path.exists("creds.json"):
         default_creds = {
             "admin": ["admin123", "Admin", "All"],
             "gasco": ["gas2026", "Gas Company", "HP Gas"],
             "testco": ["test99", "Test Center", "North Yard"]
         }
-        with open("credentials.json", "w") as f:
+        with open("creds.json", "w") as f:
             json.dump(default_creds, f)
     
     with open("credentials.json", "r") as f:
@@ -305,6 +305,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
