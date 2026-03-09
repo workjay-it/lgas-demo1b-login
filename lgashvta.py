@@ -81,14 +81,27 @@ def get_unified_data():
 
 full_df = get_unified_data()
 
-# --- 3. DYNAMIC NAVIGATION ---
-st.sidebar.title(f"{st.session_state.role}")
-menu = ["Dashboard", "Search Unit"] 
+# --- 3. TOP NAVIGATION (Replacing Sidebar) ---
 
+# We still use the sidebar ONLY for the role label and Developer Mode toggle
+# to keep the main screen clean, but move the actual Page Selection to the top.
+with st.sidebar:
+    st.title(f"👤 {st.session_state.role}")
+    st.markdown("---")
+    dev_mode = True
+    if st.session_state.role == "Admin":
+        st.subheader("Admin Controls")
+        dev_mode = st.toggle("Developer Mode", value=True)
+    
+    if st.button("Logout", use_container_width=True):
+        st.session_state.role = None
+        st.rerun()
+
+# --- MAIN PAGE NAVIGATION ---
+st.title("Domestic Gas Logistics Portal")
+
+# Define the menu based on roles
 if st.session_state.role == "Admin":
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Admin Controls")
-    dev_mode = st.sidebar.toggle("Developer Mode", value=True)
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
 elif st.session_state.role == "Gas Company":
@@ -96,11 +109,11 @@ elif st.session_state.role == "Gas Company":
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-choice = st.sidebar.radio("Navigation", menu)
+# The Horizontal Navigation Bar
+# This replaces st.sidebar.radio
+choice = st.pills("Navigate to:", menu, selection_mode="single", default="Dashboard")
 
-if st.sidebar.button("Logout"):
-    st.session_state.role = None
-    st.rerun()
+st.markdown("---")
 
 
 # --- PAGE: USER MANAGEMENT ---
@@ -337,6 +350,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
