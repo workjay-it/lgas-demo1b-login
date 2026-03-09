@@ -33,7 +33,7 @@ def load_credentials():
         with open("creds.json", "w") as f:
             json.dump(default_creds, f)
     
-    with open("credentials.json", "r") as f:
+    with open("creds.json", "r") as f:
         return json.load(f)
 
 def login():
@@ -342,6 +342,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
