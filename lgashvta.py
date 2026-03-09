@@ -101,44 +101,46 @@ choice = st.sidebar.radio("Navigation", menu)
 if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
-# --- PAGE: USER MANAGEMENT (Edit Fixed Accounts) ---
+# --- PAGE: USER MANAGEMENT (Complete Section) ---
 elif choice == "User Management":
     st.header("👥 Account Credentials Manager")
     
-    # 1. Load data from local file
+    # 1. Fresh load directly from the local JSON file
     creds = load_credentials()
     
-    # 2. STATUS BOARD (At the Top - Always Visible)
+    # 2. STATUS BOARD: Always visible at the top
     st.subheader("📍 Current Active Credentials")
     
-    # We build the list directly without any "********" masking logic
-    display_data = []
-    for slot_name, details in creds.items():
-        display_data.append({
-            "Account Slot": slot_name,
-            "Current Password": details[0],  # No masking here
+    display_list = []
+    for slot, details in creds.items():
+        display_list.append({
+            "Account Slot": slot,
+            "Current Password": details[0],
             "Role": details[1],
             "Assigned Company": details[2]
         })
     
-    # Displaying as a Table at the top for maximum visibility
-    st.table(pd.DataFrame(display_data))
-    
+    # Force the display to only show the rows present in the JSON
+    st.table(pd.DataFrame(display_list)) 
+
     st.markdown("---")
 
-    # 3. EDIT SECTION (Below the table)
+    # 3. EDIT SECTION: Interface to change the credentials
     st.subheader("🔄 Update Account Details")
+    
+    # Dropdown to select which of the 3 slots to modify
     account_slots = list(creds.keys())
     selected_slot = st.selectbox("Select Account Slot to Modify", account_slots)
     
     with st.container():
+        # Get current values to show as defaults in the text boxes
         current_pass = creds[selected_slot][0]
         current_role = creds[selected_slot][1]
         current_link = creds[selected_slot][2]
         
         col1, col2 = st.columns(2)
         with col1:
-            # Note: Removed type="password" here so he can see what he is typing
+            # Removed type="password" so the Admin can see what they are typing
             new_password = st.text_input("Set New Password", value=current_pass)
         with col2:
             new_link = st.text_input("Assign to Company (Client Link)", value=current_link)
@@ -149,13 +151,14 @@ elif choice == "User Management":
             # Update the dictionary values
             creds[selected_slot] = [new_password, current_role, new_link]
             
-            # Write directly back to the JSON file
-            with open("credentials.json", "w") as f:
+            # Save the updated dictionary back to the JSON file
+            with open("creds.json", "w") as f:
                 json.dump(creds, f)
                 
             st.success(f"Changes for {selected_slot} saved to local registry!")
-            # The rerun ensures the table at the top updates immediately
+            # Rerun forces the table at the top to refresh immediately
             st.rerun()
+
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -339,6 +342,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
