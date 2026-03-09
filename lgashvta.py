@@ -84,20 +84,24 @@ def get_unified_data():
 
 full_df = get_unified_data()
 
-# --- 3. TOP NAVIGATION & SIDEBAR INFO ---
-with st.sidebar:
-    st.title(f"👤 {st.session_state.role}")
-    st.markdown("---")
+# --- 3. TOP NAVIGATION (Sidebar Completely Removed) ---
+st.title("🚛 Domestic Gas Logistics Portal")
+
+# 1. Role Info & Global Actions (Horizontal Layout at the top)
+col1, col2, col3 = st.columns([2, 2, 1])
+with col1:
+    st.write(f"👤 **Logged in as:** {st.session_state.role}")
+with col2:
     dev_mode = True
     if st.session_state.role == "Admin":
-        st.subheader("Admin Controls")
+        # Moves Developer Mode toggle to the top right area
         dev_mode = st.toggle("Developer Mode", value=True)
-    
-    if st.button("Logout", use_container_width=True):
+with col3:
+    if st.button("Logout"):
         st.session_state.role = None
         st.rerun()
 
-# Define Horizontal Menu
+# 2. Define Menu Logic
 if st.session_state.role == "Admin":
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
@@ -106,7 +110,7 @@ elif st.session_state.role == "Gas Company":
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-# TOP NAVIGATION BAR
+# 3. The Navigation "Pills"
 choice = st.pills("Navigation", menu, selection_mode="single", default="Dashboard")
 st.markdown("---")
 
@@ -324,6 +328,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
