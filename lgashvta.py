@@ -102,26 +102,53 @@ if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
 
-# --- PAGE: USER MANAGEMENT (Local File Management) ---
-if choice == "User Management":
-    st.header("Local User Management")
+# --- PAGE: USER MANAGEMENT (Edit Fixed Accounts) ---
+elif choice == "User Management":
+    st.header("👥 Account Credentials Manager")
+    
+    # Load the current 3 accounts from the local file
     creds = load_credentials()
     
-    st.subheader("Current Local Registry")
-    st.write(pd.DataFrame.from_dict(creds, orient='index', columns=['Password', 'Role', 'Company Link']))
+    # Create a list of the internal keys (e.g., ['admin', 'gasco', 'testco'])
+    account_slots = list(creds.keys())
+    
+    st.info("Select one of the three primary accounts below to update its login details.")
+
+    # 1. Selection
+    selected_slot = st.selectbox("Select Account Slot to Modify", account_slots)
+    
+    # 2. Edit Form
+    with st.container():
+        st.subheader(f"Editing Slot: {selected_slot}")
+        
+        # We use the current values as defaults
+        current_pass = creds[selected_slot][0]
+        current_role = creds[selected_slot][1]
+        current_link = creds[selected_slot][2]
+        
+        new_user_display = st.text_input("Display Username", value=selected_slot)
+        new_password = st.text_input("New Password", value=current_pass, type="password")
+        new_link = st.text_input("Assigned Company (Client Link)", value=current_link)
+        
+        st.warning(f"Note: This will update the login for the {current_role} role.")
+
+        if st.button("Apply & Save Changes"):
+            # Update the local dictionary
+            # Note: We keep the internal key (selected_slot) the same but update values
+            creds[selected_slot] = [new_password, current_role, new_link]
+            
+            # Save back to the JSON file
+            with open("credentials.json", "w") as f:
+                json.dump(creds, f)
+                
+            st.success(f"Changes for {selected_slot} saved to local registry!")
+            st.rerun()
 
     st.markdown("---")
-    st.subheader("🔄 Update/Add Account")
-    u_name = st.text_input("Username to Update/Add")
-    u_pass = st.text_input("Password")
-    u_role = st.selectbox("Role", ["Admin", "Gas Company", "Test Center"])
-    u_link = st.text_input("Company Link (e.g., HP Gas)")
-
-    if st.button("Save to local file"):
-        creds[u_name] = [u_pass, u_role, u_link]
-        with open("creds.json", "w") as f:
-            json.dump(creds, f)
-        st.success(f"Credentials for {u_name} saved locally!")
+    st.subheader("Current Active Credentials")
+    # Show the table so they can see the changes took effect
+    st.table(pd.DataFrame.from_dict(creds, orient='index', 
+             columns=['Password (Hidden)', 'Role', 'Company']).assign(**{'Password (Hidden)': '********'}))
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -305,6 +332,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
