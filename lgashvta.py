@@ -84,24 +84,30 @@ def get_unified_data():
 
 full_df = get_unified_data()
 
-# --- 3. TOP NAVIGATION (Sidebar Completely Removed) ---
-st.title("🚛 Domestic Gas Logistics Portal")
+# --- 3. TOP NAVIGATION (Clean & Centered) ---
 
-# 1. Role Info & Global Actions (Horizontal Layout at the top)
-col1, col2, col3 = st.columns([2, 2, 1])
+# This centers the title and removes the extra left-aligned title
+st.markdown("<h1 style='text-align: center;'>🚛 Domestic Gas Logistics Portal</h1>", unsafe_allow_html=True)
+
+# 1. Role Info & Global Actions (Balanced Row)
+# Using [1, 2, 1] creates a wider center column for better spacing
+col1, col2, col3 = st.columns([1, 2, 1])
+
 with col1:
-    st.write(f"👤 **Logged in as:** {st.session_state.role}")
+    st.write(f"**Role:** {st.session_state.role}")
+
 with col2:
+    # Logic for Admin controls
     dev_mode = True
     if st.session_state.role == "Admin":
-        # Moves Developer Mode toggle to the top right area
         dev_mode = st.toggle("Developer Mode", value=True)
+
 with col3:
-    if st.button("Logout"):
+    if st.button("Logout", key="top_logout"):
         st.session_state.role = None
         st.rerun()
 
-# 2. Define Menu Logic
+# 2. Define Menu Logic (Same as before)
 if st.session_state.role == "Admin":
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
@@ -110,9 +116,15 @@ elif st.session_state.role == "Gas Company":
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-# 3. The Navigation "Pills"
-choice = st.pills("Navigation", menu, selection_mode="single", default="Dashboard")
+# 3. The Navigation "Pills" (Centered below the info bar)
+# We wrap the pills in a column to keep them centered on the page
+_, nav_col, _ = st.columns([1, 6, 1])
+with nav_col:
+    # label_visibility="collapsed" keeps the UI clean
+    choice = st.pills("Navigation", menu, selection_mode="single", default="Dashboard", label_visibility="collapsed")
+
 st.markdown("---")
+
 
 # --- PAGE: USER MANAGEMENT ---
 if choice == "User Management":
@@ -328,6 +340,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
