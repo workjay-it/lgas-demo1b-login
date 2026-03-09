@@ -141,10 +141,6 @@ if choice == "User Management":
         else:
             st.error("Incorrect Master Admin Key.")
 
-# --- PAGE: DASHBOARD ---
-elif choice == "Dashboard":
-    # (Rest of your Dashboard code follows here...)
-
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -328,6 +324,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
