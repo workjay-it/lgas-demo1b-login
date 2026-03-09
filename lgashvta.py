@@ -87,7 +87,7 @@ menu = ["Dashboard", "Search Unit"]
 
 if st.session_state.role == "Admin":
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🛠️ Admin Controls")
+    st.sidebar.subheader("Admin Controls")
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
@@ -153,7 +153,7 @@ elif choice == "User Management":
             st.success("Credentials updated successfully!")
             st.rerun()
         else:
-            st.error("❌ Incorrect Master Admin Key. You do not have permission to change credentials.")
+            st.error("Incorrect Master Admin Key. You do not have permission to change credentials.")
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -192,7 +192,7 @@ elif choice == "Dashboard":
                 st.dataframe(overdue[["Cylinder_ID", "batch_id", "Next_Test_Due"]], use_container_width=True, hide_index=True)
                 
                 st.download_button(
-                    label="📥 Download Compliance List (CSV)",
+                    label="Download Compliance List (CSV)",
                     data=overdue.to_csv(index=False).encode('utf-8'),
                     file_name=f"compliance_{today}.csv",
                     mime='text/csv',
@@ -243,7 +243,7 @@ elif choice == "Financial & Billing":
                      use_container_width=True, hide_index=True)
         
         # Download Bill as CSV
-        st.download_button(label="📥 Download Bill (CSV)", 
+        st.download_button(label="Download Bill (CSV)", 
                           data=batch_data.to_csv(index=False).encode('utf-8'),
                           file_name=f"bill_{target_b}.csv")
 
@@ -337,6 +337,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
