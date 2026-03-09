@@ -79,10 +79,16 @@ st.sidebar.title(f"👤 {st.session_state.role}")
 menu = ["Dashboard", "Search Unit"] 
 
 if st.session_state.role == "Admin":
-    full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
+    # 1. ADMIN CONTROLS HEADER
     st.sidebar.markdown("---")
     st.sidebar.subheader("🛠️ Admin Controls")
+    
+    # 2. DEVELOPER MODE TOGGLE
+    # This matches the red/orange toggle style in your screenshot
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
+    
+    # 3. CONDITIONAL MENU
+    full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
 
 elif st.session_state.role == "Gas Company":
@@ -91,6 +97,7 @@ elif st.session_state.role == "Gas Company":
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
+# 4. NAVIGATION SELECTION
 choice = st.sidebar.radio("Navigation", menu)
 
 if st.sidebar.button("Logout"):
@@ -286,6 +293,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
