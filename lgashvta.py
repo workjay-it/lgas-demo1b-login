@@ -18,23 +18,26 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 1.5 LOGIN & ACCESS CONTROL (Local JSON Version) ---
+# --- 1.5 LOGIN & ACCESS CONTROL ---
 if 'role' not in st.session_state:
     st.session_state.role = None
 
 def load_credentials():
-    # If file doesn't exist, create a default one
-    if not os.path.exists("creds.json"):
-        default_creds = {
-            "admin": ["admin123", "Admin", "All"],
-            "gasco": ["gas2026", "Gas Company", "HP Gas"],
-            "testco": ["test99", "Test Center", "North Yard"]
-        }
-        with open("creds.json", "w") as f:
+    file_path = "creds.json"
+    default_creds = {
+        "admin": ["admin123", "Admin", "All"],
+        "gasco": ["gas2026", "Gas Company", "HP Gas"],
+        "testco": ["test99", "Test Center", "North Yard"]
+    }
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as f:
             json.dump(default_creds, f)
+        return default_creds
     
-    with open("creds.json", "r") as f:
-        return json.load(f)
+    with open(file_path, "r") as f:
+        data = json.load(f)
+        # Cleanup: Only return the three primary keys to remove ghost users
+        return {k: v for k, v in data.items() if k in default_creds}
 
 def login():
     creds = load_credentials()
@@ -45,7 +48,7 @@ def login():
         if st.button("Login"):
             if user in creds and pwd == creds[user][0]:
                 st.session_state.role = creds[user][1]
-                st.session_state.company_link = creds[user][2] # Assigns company link from JSON
+                st.session_state.company_link = creds[user][2]
                 st.rerun()
             else:
                 st.error("Invalid credentials")
@@ -54,7 +57,7 @@ if st.session_state.role is None:
     login()
     st.stop()
 
-# --- 2. DATABASE CONNECTION & GLOBAL DATA ---
+# --- 2. DATABASE CONNECTION ---
 @st.cache_resource
 def init_connection():
     return create_client(st.secrets["connections"]["supabase"]["url"], st.secrets["connections"]["supabase"]["key"])
@@ -81,10 +84,7 @@ def get_unified_data():
 
 full_df = get_unified_data()
 
-# --- 3. TOP NAVIGATION (Replacing Sidebar) ---
-
-# We still use the sidebar ONLY for the role label and Developer Mode toggle
-# to keep the main screen clean, but move the actual Page Selection to the top.
+# --- 3. TOP NAVIGATION & SIDEBAR INFO ---
 with st.sidebar:
     st.title(f"👤 {st.session_state.role}")
     st.markdown("---")
@@ -97,10 +97,7 @@ with st.sidebar:
         st.session_state.role = None
         st.rerun()
 
-# --- MAIN PAGE NAVIGATION ---
-st.title("Domestic Gas Logistics Portal")
-
-# Define the menu based on roles
+# Define Horizontal Menu
 if st.session_state.role == "Admin":
     full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
@@ -109,11 +106,44 @@ elif st.session_state.role == "Gas Company":
 elif st.session_state.role == "Test Center":
     menu = ["Dashboard", "Bulk Processing (Workers)", "Search Unit"]
 
-# The Horizontal Navigation Bar
-# This replaces st.sidebar.radio
-choice = st.pills("Navigate to:", menu, selection_mode="single", default="Dashboard")
-
+# TOP NAVIGATION BAR
+choice = st.pills("Navigation", menu, selection_mode="single", default="Dashboard")
 st.markdown("---")
+
+# --- PAGE: USER MANAGEMENT ---
+if choice == "User Management":
+    st.header("Account Credentials Manager")
+    creds = load_credentials()
+    
+    st.subheader("Current Active Credentials")
+    display_list = [{"Account Slot": k, "Current Password": v[0], "Role": v[1], "Assigned Company": v[2]} for k, v in creds.items()]
+    st.table(pd.DataFrame(display_list)) 
+
+    st.markdown("---")
+    st.subheader("Update Account Details")
+    selected_slot = st.selectbox("Select Account Slot to Modify", list(creds.keys()))
+    
+    col1, col2 = st.columns(2)
+    new_password = col1.text_input("Set New Password", value=creds[selected_slot][0])
+    new_link = col2.text_input("Assign to Company", value=creds[selected_slot][2])
+    
+    st.markdown("#### Administrative Authorization ####")
+    master_key_input = st.text_input("Enter Master Admin Key to Save Changes", type="password")
+    ACTUAL_MASTER_KEY = "kws2026" 
+
+    if st.button("Apply & Save Changes"):
+        if master_key_input == ACTUAL_MASTER_KEY:
+            creds[selected_slot] = [new_password, creds[selected_slot][1], new_link]
+            with open("creds.json", "w") as f:
+                json.dump(creds, f)
+            st.success("Credentials updated successfully!")
+            st.rerun()
+        else:
+            st.error("Incorrect Master Admin Key.")
+
+# --- PAGE: DASHBOARD ---
+elif choice == "Dashboard":
+    # (Rest of your Dashboard code follows here...)
 
 
 # --- PAGE: DASHBOARD ---
@@ -298,6 +328,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
