@@ -104,54 +104,6 @@ if st.sidebar.button("Logout"):
     st.session_state.role = None
     st.rerun()
 
-# --- PAGE: USER MANAGEMENT (Admin Only) ---
-elif choice == "User Management":
-    st.header("👥 User Account Management")
-    
-    # 1. Fetch current users from your Supabase 'profiles' table
-    try:
-        res = supabase.table("profiles").select("*").execute()
-        users_df = pd.DataFrame(res.data)
-        
-        if users_df.empty:
-            st.warning("No user profiles found in the database.")
-        else:
-            # 2. Display the list of accounts
-            st.subheader("Current Accounts")
-            st.dataframe(users_df[["username", "role", "client_link"]], use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            
-            # 3. Form to Update Passwords
-            st.subheader("🔄 Update Login Information")
-            col1, col2 = st.columns(2)
-            with col1:
-                user_to_edit = st.selectbox("Select Username", users_df["username"].tolist())
-            with col2:
-                new_pass = st.text_input("Set New Password", type="password")
-            
-            if st.button("Save New Password"):
-                if new_pass:
-                    # Updates the database directly without touching Python code
-                    supabase.table("profiles").update({"password": new_pass}).eq("username", user_to_edit).execute()
-                    st.success(f"Success: Password for {user_to_edit} has been updated.")
-                else:
-                    st.warning("Please enter a password to save.")
-
-            st.markdown("---")
-
-            # 4. Action to Delete Users
-            st.subheader("🗑️ Remove User")
-            user_to_del = st.selectbox("Select User to Remove", users_df["username"].tolist(), key="del_select")
-            if st.button("Permanently Delete Account"):
-                # Safety check before deletion
-                supabase.table("profiles").delete().eq("username", user_to_del).execute()
-                st.success(f"Account {user_to_del} removed.")
-                st.rerun()
-
-    except Exception as e:
-        st.error(f"Could not load user data: {e}")
-
 
 # --- PAGE: DASHBOARD ---
 if choice == "Dashboard":
@@ -342,6 +294,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
