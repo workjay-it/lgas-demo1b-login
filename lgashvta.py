@@ -22,7 +22,7 @@ if 'role' not in st.session_state:
 
 def login():
     with st.container():
-        st.subheader("🔑 Gas Logistics Portal Login")
+        st.subheader("Gas Logistics Portal Login")
         user = st.text_input("Username")
         pwd = st.text_input("Password", type="password")
         if st.button("Login"):
@@ -130,7 +130,7 @@ if choice == "Dashboard":
             
             if not overdue.empty:
                 st.error(f"Critical: {len(overdue)} units have expired test dates.")
-                with st.expander("View Overdue Units (Scrollable)"):
+                with st.expander("View Overdue Units"):
                     st.dataframe(
                         overdue[["Cylinder_ID", "Next_Test_Due", "company"]], 
                         height=200, 
@@ -172,7 +172,7 @@ if choice == "Dashboard":
             # Displays the full list only if the toggle is ON
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         else:
-            st.info("Inventory list is hidden. Use the toggle above to view all records.")
+            st.info("Inventory list is hidden currently.")
             
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
@@ -286,6 +286,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
