@@ -104,7 +104,7 @@ if st.sidebar.button("Logout"):
 
 # --- PAGE: USER MANAGEMENT (Local File Management) ---
 if choice == "User Management":
-    st.header("👥 Local User Management")
+    st.header("Local User Management")
     creds = load_credentials()
     
     st.subheader("Current Local Registry")
@@ -119,7 +119,7 @@ if choice == "User Management":
 
     if st.button("Save to local file"):
         creds[u_name] = [u_pass, u_role, u_link]
-        with open("credentials.json", "w") as f:
+        with open("creds.json", "w") as f:
             json.dump(creds, f)
         st.success(f"Credentials for {u_name} saved locally!")
 
@@ -305,6 +305,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
