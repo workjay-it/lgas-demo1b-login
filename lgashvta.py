@@ -88,7 +88,7 @@ if st.session_state.role == "Admin":
     dev_mode = st.sidebar.toggle("Developer Mode", value=True)
     
     # 3. CONDITIONAL MENU
-    full_menu = ["Dashboard", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
+    full_menu = ["Dashboard", "User Management", "Bulk Processing (Workers)", "Financial & Billing", "Truck Intake", "Search Unit", "Gas Co Upload"]
     menu = full_menu if dev_mode else ["Dashboard", "Search Unit"]
 
 elif st.session_state.role == "Gas Company":
@@ -293,6 +293,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
