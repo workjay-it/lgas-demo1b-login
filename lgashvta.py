@@ -106,49 +106,56 @@ if st.sidebar.button("Logout"):
 elif choice == "User Management":
     st.header("👥 Account Credentials Manager")
     
-    # Load the current 3 accounts from the local file
+    # 1. Load data from local file
     creds = load_credentials()
     
-    # Create a list of the internal keys (e.g., ['admin', 'gasco', 'testco'])
-    account_slots = list(creds.keys())
+    # 2. STATUS BOARD (At the Top)
+    st.subheader("📍 Current Active Credentials")
     
-    st.info("Select one of the three primary accounts below to update its login details.")
+    # Checkbox to reveal passwords only if the Admin wants to see them
+    reveal_pass = st.checkbox("Show Passwords")
+    
+    # Prepare data for display
+    display_data = []
+    for username, details in creds.items():
+        display_data.append({
+            "Account Slot": username,
+            "Password": details[0] if reveal_pass else "********",
+            "Role": details[1],
+            "Assigned Company": details[2]
+        })
+    
+    st.table(pd.DataFrame(display_data))
+    
+    st.markdown("---")
 
-    # 1. Selection
+    # 3. EDIT SECTION (Below the table)
+    st.subheader("🔄 Update Account Details")
+    account_slots = list(creds.keys())
     selected_slot = st.selectbox("Select Account Slot to Modify", account_slots)
     
-    # 2. Edit Form
     with st.container():
-        st.subheader(f"Editing Slot: {selected_slot}")
-        
-        # We use the current values as defaults
         current_pass = creds[selected_slot][0]
         current_role = creds[selected_slot][1]
         current_link = creds[selected_slot][2]
         
-        new_user_display = st.text_input("Display Username", value=selected_slot)
-        new_password = st.text_input("New Password", value=current_pass, type="password")
-        new_link = st.text_input("Assigned Company (Client Link)", value=current_link)
+        col1, col2 = st.columns(2)
+        with col1:
+            # Note: We keep the Slot ID but allow updating the login value
+            new_password = st.text_input("New Password", value=current_pass)
+        with col2:
+            new_link = st.text_input("Assigned Company (Client Link)", value=current_link)
         
-        st.warning(f"Note: This will update the login for the {current_role} role.")
-
         if st.button("Apply & Save Changes"):
-            # Update the local dictionary
-            # Note: We keep the internal key (selected_slot) the same but update values
+            # Update the dictionary values
             creds[selected_slot] = [new_password, current_role, new_link]
             
-            # Save back to the JSON file
+            # Write to the JSON file
             with open("credentials.json", "w") as f:
                 json.dump(creds, f)
                 
-            st.success(f"Changes for {selected_slot} saved to local registry!")
+            st.success(f"Credentials for {selected_slot} updated successfully!")
             st.rerun()
-
-    st.markdown("---")
-    st.subheader("Current Active Credentials")
-    # Show the table so they can see the changes took effect
-    st.table(pd.DataFrame.from_dict(creds, orient='index', 
-             columns=['Password (Hidden)', 'Role', 'Company']).assign(**{'Password (Hidden)': '********'}))
 
 # --- PAGE: DASHBOARD ---
 elif choice == "Dashboard":
@@ -332,6 +339,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
