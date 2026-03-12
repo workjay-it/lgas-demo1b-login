@@ -227,7 +227,77 @@ elif choice == "Dashboard":
                 mime="text/csv",
                 key="full_dl"
             )
-            
+
+# --- PAGE: BULK PROCESSING ---
+elif choice == "Bulk Processing (Workers)":
+    st.header("Production Line Triage")
+
+    if full_df.empty:
+        st.warning("No data found. Register a Batch in 'Truck Intake' first.")
+    else:
+
+        available_batches = sorted(full_df["batch_id"].dropna().unique())
+        selected_batch = st.selectbox("Select Batch to Work On", available_batches)
+
+        batch_df = full_df[full_df["batch_id"] == selected_batch].copy()
+
+        if batch_df.empty:
+            st.info("No cylinders found in this batch.")
+        else:
+
+            if "Status" not in batch_df.columns:
+                batch_df["Status"] = "Empty"
+
+            if "Condition_Notes" not in batch_df.columns:
+                batch_df["Condition_Notes"] = "Good / No Repair"
+
+            edited_df = st.data_editor(
+                batch_df[["Cylinder_ID", "Status", "Condition_Notes"]],
+                column_config={
+                    "Cylinder_ID": st.column_config.TextColumn(
+                        "Cylinder ID",
+                        disabled=True
+                    ),
+                    "Status": st.column_config.SelectboxColumn(
+                        "Result",
+                        options=[
+                            "Full",
+                            "Damaged",
+                            "Under Maintenance"
+                        ]
+                    ),
+                    "Condition_Notes": st.column_config.SelectboxColumn(
+                        "Damage Type",
+                        options=[
+                            "Good / No Repair",
+                            "Valve Leak (Minor)",
+                            "Valve Replacement",
+                            "Body Dent Repair",
+                            "Re-painting Required",
+                            "Foot Ring Straightening",
+                            "Condemned"
+                        ]
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="worker_editor"
+            )
+
+            if st.button("Submit Production Data"):
+
+                for _, row in edited_df.iterrows():
+                    supabase.table("cylinders").update({
+                        "Status": row["Status"],
+                        "Condition_Notes": row["Condition_Notes"],
+                        "Last_Test_Date": str(datetime.now().date())
+                    }).eq("Cylinder_ID", row["Cylinder_ID"]).execute()
+
+                st.success("Batch Updated Successfully!")
+                st.cache_data.clear()
+                st.rerun()
+
+
 # --- PAGE: FINANCIAL & BILLING ---
 elif choice == "Financial & Billing":
     st.header("Batch Billing & Cost Analysis")
@@ -340,6 +410,7 @@ elif choice == "Gas Co Upload":
                 supabase.table("cylinders").insert({"Cylinder_ID": scanned_id, "batch_id": scanned_batch, "Status": "Empty"}).execute()
                 st.success("Scanned unit registered!")
                 st.cache_data.clear()
+
 
 
 
